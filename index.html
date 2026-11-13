@@ -40,9 +40,13 @@ small{font-family:system-ui,sans-serif;color:var(--mut)}
 <p class="m" style="margin:8px 0 0;font:13px system-ui">Each customer name keeps its own mappings, saved to your account and available on any device you sign in from.</p></section>
 
 <section id="s2" class="off"><h2>Map to their Tally</h2>
-<div class="row"><label>Tally company name (exact)<input data-p="company"></label><label>Round-off ledger<input data-p="round"></label><label>Other charges ledger<input data-p="other"></label></div>
+<div class="row"><label>Tally company name (exact)<input data-p="company"></label><label>Round-off ledger<input data-p="round" list="tl"></label><label>Other charges ledger<input data-p="other" list="tl"></label></div>
+<h2 style="margin-top:16px">Their Tally ledger list (recommended)</h2>
+<p class="m" style="font:13px system-ui;margin:0 0 8px">In their Tally, open Display More Reports, then List of Accounts, then Ledgers, press Ctrl+E and export to Excel. Upload it here so ledger names can be picked from their real Tally instead of typed.</p>
+<input type="file" id="tfile" accept=".xlsx,.xls,.csv"><p id="tmsg" class="m" style="margin:6px 0 0;font:13px system-ui"></p><datalist id="tl"></datalist>
 <h2 style="margin-top:16px">Ledgers by GST rate</h2><div class="tw" id="slabs"></div>
 <h2 style="margin-top:16px">Tax ledgers</h2><div class="tw" id="taxl"></div>
+<h2 style="margin-top:16px">Tally groups (the heads these ledgers sit under)</h2><div class="tw" id="grp"></div>
 <h2 style="margin-top:16px">Voucher type for each PHARMASSIST prefix</h2><div class="tw" id="pref"></div></section>
 
 <section id="s3" class="off"><h2>Upload Excel</h2>
@@ -68,6 +72,7 @@ const GT={registered:'Regular','0':'Regular','unreg with rcm':'Unregistered/Cons
 const defP=()=>({company:'',round:'Round Off',other:'Other Charges',
  sale:{slab:Object.fromEntries(SL.map(r=>[r,`Sales GST ${r}%`])),cgst:'Output CGST',sgst:'Output SGST',igst:'Output IGST'},
  pur:{slab:Object.fromEntries(SL.map(r=>[r,`Purchase GST ${r}%`])),cgst:'Input CGST',sgst:'Input SGST',igst:'Input IGST'},
+ groups:{debtors:'Sundry Debtors',creditors:'Sundry Creditors',sales:'Sales Accounts',purchase:'Purchase Accounts',tax:'Duties & Taxes',exp:'Indirect Expenses'},
  prefix:{I:'Sales',CR:'Credit Note',P:'Purchase',PR:'Debit Note',DV:'Purchase'},parties:{}});
 // ---- Supabase settings: paste yours from Project Settings > API ----
 const SB_URL='https://gktbumbjamhiybsgykuj.supabase.co',SB_KEY='sb_publishable_72d4r9kJ4y_mOkLJesvRpg_VNwg5P1B';
@@ -85,7 +90,7 @@ async function boot(){if(!sb){show('auth');$('#am').textContent='Add your Supaba
  if(!pr||!pr.approved){show('wait');return}
  const{data:rows,error}=await sb.from('mappings').select('name,data');
  if(error){show('auth');$('#am').textContent=error.message;return}
- DB={};rows.forEach(r=>DB[r.name]=r.data);cur=Object.keys(DB)[0]||'';show('app');drawProfiles()}
+ DB={};rows.forEach(r=>{const d=r.data;d.groups=Object.assign(defP().groups,d.groups||{});DB[r.name]=d});cur=Object.keys(DB)[0]||'';show('app');drawProfiles()}
 async function auth(up){const em=$('#em').value.trim(),pw=$('#pw').value,m=$('#am');m.textContent='Please wait…';
  if(!em||pw.length<6){m.textContent='Enter an email and a password of 6 or more characters.';return}
  const r=up?await sb.auth.signUp({email:em,password:pw}):await sb.auth.signInWithPassword({email:em,password:pw});
@@ -102,11 +107,21 @@ function setp(o,p,v){const k=p.split('.');let a=o;k.slice(0,-1).forEach(x=>a=a[x
 
 function drawProfiles(){const s=$('#prof');s.innerHTML=(Object.keys(DB).length?'':'<option value="">No customers yet</option>')+Object.keys(DB).map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('');
  ['s2','s3'].forEach(i=>$('#'+i).classList.toggle('off',!cur));if(cur)drawMap();}
-function drawMap(){const p=P(),inp=(path,w)=>`<input data-p="${path}" value="${esc(get(p,path)||'')}">`;
+function drawMap(){const p=P(),inp=(path,l)=>`<input data-p="${path}" ${l?'list="tl"':''} value="${esc(get(p,path)||'')}">`;
  document.querySelectorAll('[data-p="company"],[data-p="round"],[data-p="other"]').forEach(i=>i.value=p[i.dataset.p]||'');
- $('#slabs').innerHTML='<table><tr><th>GST rate</th><th>Sales ledger</th><th>Purchase ledger</th></tr>'+SL.map(r=>`<tr><td>${r}%</td><td>${inp('sale.slab.'+r)}</td><td>${inp('pur.slab.'+r)}</td></tr>`).join('')+'</table>';
- $('#taxl').innerHTML='<table><tr><th></th><th>Sales (output)</th><th>Purchase (input)</th></tr>'+['cgst','sgst','igst'].map(k=>`<tr><td>${k.toUpperCase()}</td><td>${inp('sale.'+k)}</td><td>${inp('pur.'+k)}</td></tr>`).join('')+'</table>';
+ $('#slabs').innerHTML='<table><tr><th>GST rate</th><th>Sales ledger</th><th>Purchase ledger</th></tr>'+SL.map(r=>`<tr><td>${r}%</td><td>${inp('sale.slab.'+r,1)}</td><td>${inp('pur.slab.'+r,1)}</td></tr>`).join('')+'</table>';
+ $('#taxl').innerHTML='<table><tr><th></th><th>Sales (output)</th><th>Purchase (input)</th></tr>'+['cgst','sgst','igst'].map(k=>`<tr><td>${k.toUpperCase()}</td><td>${inp('sale.'+k,1)}</td><td>${inp('pur.'+k,1)}</td></tr>`).join('')+'</table>';
+ drawTL();
+ const GL={debtors:'Customer ledgers (sales parties)',creditors:'Supplier ledgers (purchase parties)',sales:'Sales ledgers',purchase:'Purchase ledgers',tax:'GST tax ledgers',exp:'Round-off and other charges'};
+ $('#grp').innerHTML='<table><tr><th>Used for</th><th>Group name in their Tally</th></tr>'+Object.keys(GL).map(k=>`<tr><td>${GL[k]}</td><td>${inp('groups.'+k)}</td></tr>`).join('')+'</table>';
  $('#pref').innerHTML='<table><tr><th>Prefix</th><th>Tally voucher type</th></tr>'+Object.keys(p.prefix).map(k=>`<tr><td>${k}</td><td><select data-p="prefix.${k}">${VT.map(v=>`<option ${v===p.prefix[k]?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')+'</table>';}
+const nz=s=>String(s).toUpperCase().replace(/[^A-Z0-9]/g,'');
+function drawTL(){const a=P().tally||[];$('#tl').innerHTML=a.slice(0,20000).map(n=>`<option value="${esc(n)}">`).join('');$('#tmsg').textContent=a.length?`${a.length} ledgers loaded from their Tally. Start typing in a ledger box to pick from them.`:'No ledger list loaded yet.'}
+$('#tfile').onchange=async e=>{const f=e.target.files[0];if(!f||!cur)return;
+ try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),a=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:null});
+  let col=0,st=0;for(let i=0;i<Math.min(a.length,15);i++){const j=(a[i]||[]).findIndex(c=>typeof c==='string'&&/^(particulars|ledger name|name)$/i.test(c.trim()));if(j>=0){col=j;st=i+1;break}}
+  const s=new Set();a.slice(st).forEach(r=>{const v=r&&r[col];if(typeof v==='string'&&v.trim())s.add(v.trim())});
+  P().tally=[...s];save();drawTL()}catch(x){$('#tmsg').textContent='Could not read file: '+x.message}};
 document.addEventListener('input',e=>{const p=e.target.dataset&&e.target.dataset.p;if(p&&cur){setp(P(),p,e.target.value);save()}
  const q=e.target.dataset&&e.target.dataset.q;if(q&&cur){const v=e.target.value.trim();if(v&&v!==q)P().parties[q]=v;else delete P().parties[q];save()}});
 $('#prof').onchange=e=>{cur=e.target.value;save();drawProfiles();R=null;$('#s4').classList.add('off');$('#s5').classList.add('off')};
@@ -119,9 +134,9 @@ $('#file').onchange=async e=>{const fl=e.target.files[0];if(!fl)return;$('#fmsg'
   $('#fmsg').textContent=`${fl.name}: ${rows.length} rows, detected as ${kind==='sale'?'sale':'purchase'} report.`;
   R=convert(rows,kind);drawPreview()}catch(x){$('#fmsg').innerHTML='<span class="e">Could not read file: '+esc(x.message)+'</span>'}};
 
-function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={};
+function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={},tm={};(p.tally||[]).forEach(n=>tm[nz(n)]=n);
  rows.forEach((r,i)=>{const pre=String(r[c.pre]).trim(),vt=p.prefix[pre];if(!vt){iss.push(['e',i+2,'Unknown prefix "'+pre+'", row skipped']);return}
-  const raw=String(r[c.name]).replace(/\s+/g,' ').trim(),nm=p.parties[raw]||raw,tot=num(r[c.total]);let ent=[],tb=0,tx=0;
+  const raw=String(r[c.name]).replace(/\s+/g,' ').trim(),nm=p.parties[raw]||tm[nz(raw)]||raw,tot=num(r[c.total]);let ent=[],tb=0,tx=0;
   SL.forEach(s=>{const a=C.t[s],t=num(r[a[0]]);if(t){ent.push([L.slab[s],t,'s']);tb+=t}
    ['cgst','sgst','igst'].forEach((k,j)=>{const v=a[j+1]?num(r[a[j+1]]):0;if(v){ent.push([L[k],v,'t']);tx+=v}})});
   const d=tot-tb-tx;if(d){const big=Math.abs(d)>100;ent.push([big?p.other:p.round,d,'r']);if(big)iss.push(['w',i+2,`Total differs from taxable+tax by ${f2(d)}; posted to "${p.other}"`])}
@@ -135,24 +150,24 @@ function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],p
 
 function drawPreview(){const{kind,V,iss,pa}=R,p=P(),by={};let tb=0,tx=0,gt=0;const sl={};
  V.forEach(v=>{const b=by[v.vt]||(by[v.vt]={n:0,t:0});b.n++;b.t+=v.tot;gt+=v.tot;v.ent.forEach(e=>{if(e[2]==='s'){tb+=e[1];sl[e[0]]=(sl[e[0]]||0)+e[1]}if(e[2]==='t')tx+=e[1]})});
- const dates=V.map(v=>v.date).sort(),pk=Object.keys(pa).sort(),ne=iss.filter(i=>i[0]==='e').length;
+ const TS=new Set((p.tally||[]).map(n=>n.toUpperCase())),dates=V.map(v=>v.date).sort(),pk=Object.keys(pa).sort(),ne=iss.filter(i=>i[0]==='e').length;
  let h=`<div class="k"><div>Vouchers<b>${V.length.toLocaleString('en-IN')}</b></div><div>Date range<b>${dates[0]||'-'} to ${dates[dates.length-1]||'-'}</b></div><div>Taxable<b>${inr(tb)}</b></div><div>Tax<b>${inr(tx)}</b></div><div>Voucher total<b>${inr(gt)}</b></div></div>`;
  h+='<div class="tw"><table><tr><th>Voucher type</th><th class="n">Count</th><th class="n">Total</th></tr>'+Object.entries(by).map(([k,b])=>`<tr><td>${k}</td><td class="n">${b.n}</td><td class="n">${inr(b.t)}</td></tr>`).join('')+'</table></div>';
  h+='<h2 style="margin-top:16px">Ledger totals</h2><div class="tw"><table><tr><th>Ledger</th><th class="n">Amount</th></tr>'+Object.entries(sl).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="n">${inr(v)}</td></tr>`).join('')+'</table></div>';
- h+=`<h2 style="margin-top:16px">Parties (${pk.length}) <small>Edit the Tally name if it differs. Changes are saved for this customer.</small></h2><div class="tw"><table><tr><th>PHARMASSIST name</th><th>Tally ledger name</th><th class="n">Vouchers</th></tr>`+pk.map(k=>`<tr><td>${esc(k)}</td><td><input data-q="${esc(k)}" value="${esc(pa[k].tally)}"></td><td class="n">${pa[k].n}</td></tr>`).join('')+'</table></div>';
+ h+=`<h2 style="margin-top:16px">Parties (${pk.length}) <small>Edit the Tally name if it differs. Changes are saved for this customer.</small></h2><div class="tw"><table><tr><th>PHARMASSIST name</th><th>Tally ledger name</th><th>Status</th><th class="n">Vouchers</th></tr>`+pk.map(k=>`<tr><td>${esc(k)}</td><td><input data-q="${esc(k)}" list="tl" value="${esc(pa[k].tally)}"></td><td>${TS.size?(TS.has(pa[k].tally.toUpperCase())?'In Tally':'Will be created'):''}</td><td class="n">${pa[k].n}</td></tr>`).join('')+'</table></div>';
  h+=`<h2 style="margin-top:16px">Sample voucher</h2><div class="tw"><table><tr><th>Ledger</th><th class="n">Debit</th><th class="n">Credit</th></tr>`+(()=>{const v=V[0];if(!v)return'';const lines=[[v.nm,v.tot,v.deb]].concat(v.ent.map(e=>[e[0],Math.abs(e[1]),e[1]>0?!v.deb:v.deb]));return lines.map(l=>`<tr><td>${esc(l[0])}</td><td class="n">${l[2]?f2(l[1]):''}</td><td class="n">${l[2]?'':f2(l[1])}</td></tr>`).join('')})()+'</table></div>';
  h+=`<h2 style="margin-top:16px">Checks</h2>`+(iss.length?`<div class="tw"><table>`+iss.slice(0,200).map(i=>`<tr class="${i[0]==='e'?'e':'w'}"><td>Row ${i[1]}</td><td>${esc(i[2])}</td></tr>`).join('')+`</table></div>`+(iss.length>200?`<small>Showing 200 of ${iss.length}.</small>`:''):'<span>No problems found. Every voucher balances.</span>');
  $('#prev').innerHTML=h;$('#s4').classList.remove('off');$('#s5').classList.remove('off');drawDL()}
 
 const wrap=(co,rep,body)=>`<?xml version="1.0" encoding="UTF-8"?>\n<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>${rep}</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>${esc(co)}</SVCURRENTCOMPANY></STATICVARIABLES></REQUESTDESC><REQUESTDATA>${body}</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>`;
 const led=(n,par,x='')=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><LEDGER NAME="${esc(n)}" ACTION="Create"><NAME>${esc(n)}</NAME><PARENT>${esc(par)}</PARENT>${x}</LEDGER></TALLYMESSAGE>`;
-function masters(){const{kind,V,pa}=R,p=P(),C=CF[kind],L=p[kind],used=new Set(),m=[];
+function masters(){const{kind,V,pa}=R,p=P(),C=CF[kind],L=p[kind],used=new Set(),m=[],ex=new Set((p.tally||[]).map(n=>n.toUpperCase())),has=n=>ex.has(n.toUpperCase());
  V.forEach(v=>v.ent.forEach(e=>used.add(e[0])));
- SL.forEach(r=>{if(used.has(L.slab[r]))m.push(led(L.slab[r],C.inc))});
- [['cgst','Central Tax'],['sgst','State Tax'],['igst','Integrated Tax']].forEach(([k,h])=>{if(used.has(L[k]))m.push(led(L[k],'Duties & Taxes',`<TAXTYPE>GST</TAXTYPE><GSTDUTYHEAD>${h}</GSTDUTYHEAD>`))});
- [p.round,p.other].forEach(n=>{if(used.has(n))m.push(led(n,'Indirect Expenses'))});
- const seen=new Set();V.forEach(v=>{if(seen.has(v.nm))return;seen.add(v.nm);const a=pa[v.raw];
-  m.push(led(v.nm,C.grp,`<ISBILLWISEON>Yes</ISBILLWISEON><LEDGERMAILINGDETAILS.LIST><ADDRESS.LIST><ADDRESS>${esc(a.addr)}</ADDRESS></ADDRESS.LIST><STATE>${esc(a.st)}</STATE><COUNTRY>India</COUNTRY><APPLICABLEFROM>20260401</APPLICABLEFROM><MAILINGNAME>${esc(v.nm)}</MAILINGNAME></LEDGERMAILINGDETAILS.LIST><GSTREGISTRATIONTYPE>${a.rt}</GSTREGISTRATIONTYPE>${a.gstin?`<PARTYGSTIN>${esc(a.gstin)}</PARTYGSTIN>`:''}<LEDSTATENAME>${esc(a.st)}</LEDSTATENAME>`))});
+ SL.forEach(r=>{if(used.has(L.slab[r])&&!has(L.slab[r]))m.push(led(L.slab[r],kind==='sale'?p.groups.sales:p.groups.purchase))});
+ [['cgst','Central Tax'],['sgst','State Tax'],['igst','Integrated Tax']].forEach(([k,h])=>{if(used.has(L[k])&&!has(L[k]))m.push(led(L[k],p.groups.tax,`<TAXTYPE>GST</TAXTYPE><GSTDUTYHEAD>${h}</GSTDUTYHEAD>`))});
+ [p.round,p.other].forEach(n=>{if(used.has(n)&&!has(n))m.push(led(n,p.groups.exp))});
+ const seen=new Set();V.forEach(v=>{if(seen.has(v.nm))return;seen.add(v.nm);if(has(v.nm))return;const a=pa[v.raw];
+  m.push(led(v.nm,kind==='sale'?p.groups.debtors:p.groups.creditors,`<ISBILLWISEON>Yes</ISBILLWISEON><LEDGERMAILINGDETAILS.LIST><ADDRESS.LIST><ADDRESS>${esc(a.addr)}</ADDRESS></ADDRESS.LIST><STATE>${esc(a.st)}</STATE><COUNTRY>India</COUNTRY><APPLICABLEFROM>20260401</APPLICABLEFROM><MAILINGNAME>${esc(v.nm)}</MAILINGNAME></LEDGERMAILINGDETAILS.LIST><GSTREGISTRATIONTYPE>${a.rt}</GSTREGISTRATIONTYPE>${a.gstin?`<PARTYGSTIN>${esc(a.gstin)}</PARTYGSTIN>`:''}<LEDSTATENAME>${esc(a.st)}</LEDSTATENAME>`))});
  return wrap(p.company,'All Masters',m.join(''))}
 function vx(v){const a=v.deb?-v.tot:v.tot,bill=v.kind==='pur'&&v.rf?v.rf:v.no;
  return`<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${v.vt}" ACTION="Create" OBJVIEW="Accounting Invoice View"><DATE>${v.date}</DATE><VOUCHERTYPENAME>${v.vt}</VOUCHERTYPENAME><VOUCHERNUMBER>${esc(v.no)}</VOUCHERNUMBER><PARTYLEDGERNAME>${esc(v.nm)}</PARTYLEDGERNAME><PARTYNAME>${esc(v.nm)}</PARTYNAME>${v.g?`<PARTYGSTIN>${esc(v.g)}</PARTYGSTIN>`:''}<GSTREGISTRATIONTYPE>${v.rt}</GSTREGISTRATIONTYPE><PLACEOFSUPPLY>${esc(v.st)}</PLACEOFSUPPLY><STATENAME>${esc(v.st)}</STATENAME>${v.rf?`<REFERENCE>${esc(v.rf)}</REFERENCE>${v.rd?`<REFERENCEDATE>${v.rd}</REFERENCEDATE>`:''}`:''}<ISINVOICE>Yes</ISINVOICE><PERSISTEDVIEW>Accounting Invoice View</PERSISTEDVIEW><EFFECTIVEDATE>${v.date}</EFFECTIVEDATE>`
