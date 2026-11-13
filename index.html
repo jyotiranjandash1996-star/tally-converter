@@ -43,7 +43,7 @@ small{font-family:system-ui,sans-serif;color:var(--mut)}
 <div class="row"><label>Tally company name (exact)<input data-p="company"></label><label>Round-off ledger<input data-p="round" list="tl"></label><label>Other charges ledger<input data-p="other" list="tl"></label></div>
 <h2 style="margin-top:16px">Their Tally ledger list (recommended)</h2>
 <p class="m" style="font:13px system-ui;margin:0 0 8px">In their Tally, open Display More Reports, then List of Accounts, then Ledgers, press Ctrl+E and export to Excel. Upload it here so ledger names can be picked from their real Tally instead of typed.</p>
-<input type="file" id="tfile" accept=".xlsx,.xls,.csv"><p id="tmsg" class="m" style="margin:6px 0 0;font:13px system-ui"></p><datalist id="tl"></datalist>
+<div class="row"><button id="tbtn" type="button">Upload their Tally ledger list and map</button><button id="tmap" type="button" class="g">Auto-map again</button></div><input type="file" id="tfile" accept=".xlsx,.xls,.csv" hidden><p id="tmsg" class="m" style="margin:6px 0 0;font:13px system-ui"></p><datalist id="tl"></datalist>
 <h2 style="margin-top:16px">Ledgers by GST rate</h2><div class="tw" id="slabs"></div>
 <h2 style="margin-top:16px">Tax ledgers</h2><div class="tw" id="taxl"></div>
 <h2 style="margin-top:16px">Tally groups (the heads these ledgers sit under)</h2><div class="tw" id="grp"></div>
@@ -69,9 +69,13 @@ const CF={sale:{c:{no:'tran_no',pre:'pfx',date:'dt',name:'c_act_name',addr:'c_ad
 const ST=Object.fromEntries('01:Jammu & Kashmir,02:Himachal Pradesh,03:Punjab,04:Chandigarh,05:Uttarakhand,06:Haryana,07:Delhi,08:Rajasthan,09:Uttar Pradesh,10:Bihar,11:Sikkim,12:Arunachal Pradesh,13:Nagaland,14:Manipur,15:Mizoram,16:Tripura,17:Meghalaya,18:Assam,19:West Bengal,20:Jharkhand,21:Odisha,22:Chhattisgarh,23:Madhya Pradesh,24:Gujarat,26:Dadra & Nagar Haveli and Daman & Diu,27:Maharashtra,29:Karnataka,30:Goa,32:Kerala,33:Tamil Nadu,34:Puducherry,36:Telangana,37:Andhra Pradesh,38:Ladakh'.split(',').map(s=>s.split(':')));
 const VT=['Sales','Credit Note','Purchase','Debit Note'];
 const GT={registered:'Regular','0':'Regular','unreg with rcm':'Unregistered/Consumer','composite with rcm':'Composition','composite no rcm':'Composition'};
-const defP=()=>({company:'',round:'Round Off',other:'Other Charges',
- sale:{slab:Object.fromEntries(SL.map(r=>[r,`Sales GST ${r}%`])),cgst:'Output CGST',sgst:'Output SGST',igst:'Output IGST'},
- pur:{slab:Object.fromEntries(SL.map(r=>[r,`Purchase GST ${r}%`])),cgst:'Input CGST',sgst:'Input SGST',igst:'Input IGST'},
+const HF={3:'1.5',5:'2.5',12:'6',18:'9',28:'14',40:'20'};
+const mkTx=pre=>Object.fromEntries(['cgst','sgst','igst'].map(h=>[h,Object.fromEntries(Object.keys(HF).map(r=>[r,`${pre} ${h.toUpperCase()} ${h==='igst'?r:HF[r]}%`]))]));
+const fix=d=>{const D0=defP();d.groups=Object.assign(D0.groups,d.groups||{});d.slabmode=d.slabmode||'rate';d.taxmode=d.taxmode||'single';
+ ['sale','pur'].forEach(k=>{d[k].single=d[k].single||D0[k].single;d[k].tx=d[k].tx||D0[k].tx});return d};
+const defP=()=>({slabmode:'rate',taxmode:'single',company:'',round:'Round Off',other:'Other Charges',
+ sale:{single:'Sales',tx:mkTx('Output'),slab:Object.fromEntries(SL.map(r=>[r,`Sales GST ${r}%`])),cgst:'Output CGST',sgst:'Output SGST',igst:'Output IGST'},
+ pur:{single:'Purchase',tx:mkTx('Input'),slab:Object.fromEntries(SL.map(r=>[r,`Purchase GST ${r}%`])),cgst:'Input CGST',sgst:'Input SGST',igst:'Input IGST'},
  groups:{debtors:'Sundry Debtors',creditors:'Sundry Creditors',sales:'Sales Accounts',purchase:'Purchase Accounts',tax:'Duties & Taxes',exp:'Indirect Expenses'},
  prefix:{I:'Sales',CR:'Credit Note',P:'Purchase',PR:'Debit Note',DV:'Purchase'},parties:{}});
 // ---- Supabase settings: paste yours from Project Settings > API ----
@@ -90,7 +94,7 @@ async function boot(){if(!sb){show('auth');$('#am').textContent='Add your Supaba
  if(!pr||!pr.approved){show('wait');return}
  const{data:rows,error}=await sb.from('mappings').select('name,data');
  if(error){show('auth');$('#am').textContent=error.message;return}
- DB={};rows.forEach(r=>{const d=r.data;d.groups=Object.assign(defP().groups,d.groups||{});DB[r.name]=d});cur=Object.keys(DB)[0]||'';show('app');drawProfiles()}
+ DB={};rows.forEach(r=>{DB[r.name]=fix(r.data)});cur=Object.keys(DB)[0]||'';show('app');drawProfiles()}
 async function auth(up){const em=$('#em').value.trim(),pw=$('#pw').value,m=$('#am');m.textContent='Please wait…';
  if(!em||pw.length<6){m.textContent='Enter an email and a password of 6 or more characters.';return}
  const r=up?await sb.auth.signUp({email:em,password:pw}):await sb.auth.signInWithPassword({email:em,password:pw});
@@ -109,20 +113,35 @@ function drawProfiles(){const s=$('#prof');s.innerHTML=(Object.keys(DB).length?'
  ['s2','s3'].forEach(i=>$('#'+i).classList.toggle('off',!cur));if(cur)drawMap();}
 function drawMap(){const p=P(),inp=(path,l)=>`<input data-p="${path}" ${l?'list="tl"':''} value="${esc(get(p,path)||'')}">`;
  document.querySelectorAll('[data-p="company"],[data-p="round"],[data-p="other"]').forEach(i=>i.value=p[i.dataset.p]||'');
- $('#slabs').innerHTML='<table><tr><th>GST rate</th><th>Sales ledger</th><th>Purchase ledger</th></tr>'+SL.map(r=>`<tr><td>${r}%</td><td>${inp('sale.slab.'+r,1)}</td><td>${inp('pur.slab.'+r,1)}</td></tr>`).join('')+'</table>';
- $('#taxl').innerHTML='<table><tr><th></th><th>Sales (output)</th><th>Purchase (input)</th></tr>'+['cgst','sgst','igst'].map(k=>`<tr><td>${k.toUpperCase()}</td><td>${inp('sale.'+k,1)}</td><td>${inp('pur.'+k,1)}</td></tr>`).join('')+'</table>';
+ const sel=(path,opts)=>`<select data-p="${path}">${opts.map(([v,l])=>`<option value="${v}" ${get(p,path)===v?'selected':''}>${l}</option>`).join('')}</select>`;
+ $('#slabs').innerHTML=sel('slabmode',[['rate','Separate ledger for each GST rate'],['single','One ledger for all rates']])+(p.slabmode==='single'?'<table><tr><th></th><th>Ledger</th></tr><tr><td>Sales</td><td>'+inp('sale.single',1)+'</td></tr><tr><td>Purchase</td><td>'+inp('pur.single',1)+'</td></tr></table>':'<table><tr><th>GST rate</th><th>Sales ledger</th><th>Purchase ledger</th></tr>'+SL.map(r=>`<tr><td>${r}%</td><td>${inp('sale.slab.'+r,1)}</td><td>${inp('pur.slab.'+r,1)}</td></tr>`).join('')+'</table>');
+ $('#taxl').innerHTML=sel('taxmode',[['single','One ledger for each tax (CGST, SGST, IGST)'],['rate','Separate ledger for each rate']])+(p.taxmode==='rate'?'<table><tr><th>Rate</th>'+['sale','pur'].map(k=>['cgst','sgst','igst'].map(h=>`<th>${k==='sale'?'Sales':'Purchase'} ${h.toUpperCase()}</th>`).join('')).join('')+'</tr>'+Object.keys(HF).map(r=>`<tr><td>${r}%</td>`+['sale','pur'].map(k=>['cgst','sgst','igst'].map(h=>`<td>${inp(k+'.tx.'+h+'.'+r,1)}</td>`).join('')).join('')+'</tr>').join('')+'</table>':'<table><tr><th></th><th>Sales (output)</th><th>Purchase (input)</th></tr>'+['cgst','sgst','igst'].map(k=>`<tr><td>${k.toUpperCase()}</td><td>${inp('sale.'+k,1)}</td><td>${inp('pur.'+k,1)}</td></tr>`).join('')+'</table>');
  drawTL();
  const GL={debtors:'Customer ledgers (sales parties)',creditors:'Supplier ledgers (purchase parties)',sales:'Sales ledgers',purchase:'Purchase ledgers',tax:'GST tax ledgers',exp:'Round-off and other charges'};
  $('#grp').innerHTML='<table><tr><th>Used for</th><th>Group name in their Tally</th></tr>'+Object.keys(GL).map(k=>`<tr><td>${GL[k]}</td><td>${inp('groups.'+k)}</td></tr>`).join('')+'</table>';
  $('#pref').innerHTML='<table><tr><th>Prefix</th><th>Tally voucher type</th></tr>'+Object.keys(p.prefix).map(k=>`<tr><td>${k}</td><td><select data-p="prefix.${k}">${VT.map(v=>`<option ${v===p.prefix[k]?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')+'</table>';}
 const nz=s=>String(s).toUpperCase().replace(/[^A-Z0-9]/g,'');
 function drawTL(){const a=P().tally||[];$('#tl').innerHTML=a.slice(0,20000).map(n=>`<option value="${esc(n)}">`).join('');$('#tmsg').textContent=a.length?`${a.length} ledgers loaded from their Tally. Start typing in a ledger box to pick from them.`:'No ledger list loaded yet.'}
+$('#tbtn').onclick=()=>$('#tfile').click();
+$('#tmap').onclick=()=>{if(!cur||!(P().tally||[]).length){$('#tmsg').textContent='Upload their Tally ledger list first.';return}const r=autoMap();save();drawMap();showMap(r)};
+function showMap(r){$('#tmsg').innerHTML=`${(P().tally||[]).length} Tally ledgers loaded. Mapped ${r.ok} of ${r.ok+r.miss.length} PHARMASSIST heads automatically.`+(r.miss.length?`<br><span class="w">Pick these yourself from the dropdowns below: ${r.miss.slice(0,12).map(esc).join(', ')}${r.miss.length>12?` and ${r.miss.length-12} more`:''}</span>`:'<br>All heads matched. Please still check them.')+(r.miss.some(x=>/several/.test(x))?'<br>Several matches usually means separate ledgers per rate. Change the tax or sales setting above and click Auto-map again.':'')}
+function autoMap(){const p=P(),U=(p.tally||[]).map(x=>[x,x.toUpperCase()]),res={ok:0,miss:[]};
+ const pick=(label,must,bonus,set)=>{let top=0,c=[];U.forEach(([o,u])=>{if(!must.every(rx=>rx.test(u)))return;const s=1+bonus.filter(rx=>rx.test(u)).length;if(s>top){top=s;c=[o]}else if(s===top)c.push(o)});
+  if(c.length===1){set(c[0]);res.ok++}else res.miss.push(label+(c.length>1?' (several matches)':''))};
+ const rx=r=>new RegExp('(^|[^0-9.])'+String(r).replace('.','\\.')+'(?![0-9]|\\.[0-9])');
+ [['sale','Sales',/SALE/,/OUTPUT/],['pur','Purchase',/PURCHASE|PURC/,/INPUT/]].forEach(([k,nm,main,io])=>{
+  const dir=k==='sale'?/^(?!.*INPUT)/:/^(?!.*OUTPUT)/,pre=k==='sale'?'Output ':'Input ';
+  if(p.slabmode!=='single')SL.forEach(r=>pick(nm+' '+r+'%',[main,rx(r)],[/%|PER/,/GST/],v=>p[k].slab[r]=v));
+  [['cgst',/CGST|CENTRAL/],['sgst',/SGST|STATE TAX|UTGST/],['igst',/IGST|INTEGRATED/]].forEach(([h,hx])=>{
+   if(p.taxmode==='rate')Object.keys(HF).forEach(r=>{const q=h==='igst'?r:HF[r];pick(pre+h.toUpperCase()+' '+q+'%',[hx,dir,rx(q)],[io],v=>p[k].tx[h][r]=v)});
+   else pick(pre+h.toUpperCase(),[hx,dir],[io],v=>p[k][h]=v)})});
+ pick('Round off',[/ROUND/],[],v=>p.round=v);pick('Other charges',[/OTHER CHARGE|MISC/],[],v=>p.other=v);return res}
 $('#tfile').onchange=async e=>{const f=e.target.files[0];if(!f||!cur)return;
  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),a=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:null});
   let col=0,st=0;for(let i=0;i<Math.min(a.length,15);i++){const j=(a[i]||[]).findIndex(c=>typeof c==='string'&&/^(particulars|ledger name|name)$/i.test(c.trim()));if(j>=0){col=j;st=i+1;break}}
   const s=new Set();a.slice(st).forEach(r=>{const v=r&&r[col];if(typeof v==='string'&&v.trim())s.add(v.trim())});
-  P().tally=[...s];save();drawTL()}catch(x){$('#tmsg').textContent='Could not read file: '+x.message}};
-document.addEventListener('input',e=>{const p=e.target.dataset&&e.target.dataset.p;if(p&&cur){setp(P(),p,e.target.value);save()}
+  P().tally=[...s];const r=autoMap();save();drawMap();showMap(r)}catch(x){$('#tmsg').textContent='Could not read file: '+x.message}};
+document.addEventListener('input',e=>{const p=e.target.dataset&&e.target.dataset.p;if(p&&cur){setp(P(),p,e.target.value);save();if(p==='slabmode'||p==='taxmode')drawMap()}
  const q=e.target.dataset&&e.target.dataset.q;if(q&&cur){const v=e.target.value.trim();if(v&&v!==q)P().parties[q]=v;else delete P().parties[q];save()}});
 $('#prof').onchange=e=>{cur=e.target.value;save();drawProfiles();R=null;$('#s4').classList.add('off');$('#s5').classList.add('off')};
 $('#addp').onclick=()=>{const n=$('#newp').value.trim();if(!n||DB[n])return;DB[n]=defP();cur=n;$('#newp').value='';save();drawProfiles()};
@@ -137,8 +156,9 @@ $('#file').onchange=async e=>{const fl=e.target.files[0];if(!fl)return;$('#fmsg'
 function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={},tm={};(p.tally||[]).forEach(n=>tm[nz(n)]=n);
  rows.forEach((r,i)=>{const pre=String(r[c.pre]).trim(),vt=p.prefix[pre];if(!vt){iss.push(['e',i+2,'Unknown prefix "'+pre+'", row skipped']);return}
   const raw=String(r[c.name]).replace(/\s+/g,' ').trim(),nm=p.parties[raw]||tm[nz(raw)]||raw,tot=num(r[c.total]);let ent=[],tb=0,tx=0;
-  SL.forEach(s=>{const a=C.t[s],t=num(r[a[0]]);if(t){ent.push([L.slab[s],t,'s']);tb+=t}
-   ['cgst','sgst','igst'].forEach((k,j)=>{const v=a[j+1]?num(r[a[j+1]]):0;if(v){ent.push([L[k],v,'t']);tx+=v}})});
+  SL.forEach(s=>{const a=C.t[s],t=num(r[a[0]]);if(t){ent.push([p.slabmode==='single'?L.single:L.slab[s],t,'s']);tb+=t}
+   ['cgst','sgst','igst'].forEach((k,j)=>{const v=a[j+1]?num(r[a[j+1]]):0;if(v){ent.push([p.taxmode==='rate'&&s!=='0'?L.tx[k][s]:L[k],v,'t',k]);tx+=v}})});
+  const mg={};ent.forEach(e=>{const key=e[0]+'|'+e[2];if(mg[key])mg[key][1]+=e[1];else mg[key]=e.slice()});ent=Object.values(mg);
   const d=tot-tb-tx;if(d){const big=Math.abs(d)>100;ent.push([big?p.other:p.round,d,'r']);if(big)iss.push(['w',i+2,`Total differs from taxable+tax by ${f2(d)}; posted to "${p.other}"`])}
   const g=typeof r[c.gstin]==='string'?r[c.gstin].trim():'',rt=GT[String(r[c.gt]).trim().toLowerCase()]||'Regular';
   if(rt==='Regular'&&!g)iss.push(['w',i+2,`"${raw}" is Regular but has no GSTIN`]);
@@ -163,8 +183,9 @@ const wrap=(co,rep,body)=>`<?xml version="1.0" encoding="UTF-8"?>\n<ENVELOPE><HE
 const led=(n,par,x='')=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><LEDGER NAME="${esc(n)}" ACTION="Create"><NAME>${esc(n)}</NAME><PARENT>${esc(par)}</PARENT>${x}</LEDGER></TALLYMESSAGE>`;
 function masters(){const{kind,V,pa}=R,p=P(),C=CF[kind],L=p[kind],used=new Set(),m=[],ex=new Set((p.tally||[]).map(n=>n.toUpperCase())),has=n=>ex.has(n.toUpperCase());
  V.forEach(v=>v.ent.forEach(e=>used.add(e[0])));
- SL.forEach(r=>{if(used.has(L.slab[r])&&!has(L.slab[r]))m.push(led(L.slab[r],kind==='sale'?p.groups.sales:p.groups.purchase))});
- [['cgst','Central Tax'],['sgst','State Tax'],['igst','Integrated Tax']].forEach(([k,h])=>{if(used.has(L[k])&&!has(L[k]))m.push(led(L[k],p.groups.tax,`<TAXTYPE>GST</TAXTYPE><GSTDUTYHEAD>${h}</GSTDUTYHEAD>`))});
+ const sl=new Set(),tx=new Map();V.forEach(v=>v.ent.forEach(e=>{if(e[2]==='s')sl.add(e[0]);if(e[2]==='t')tx.set(e[0],e[3])}));
+ sl.forEach(n=>{if(!has(n))m.push(led(n,kind==='sale'?p.groups.sales:p.groups.purchase))});
+ tx.forEach((h,n)=>{if(!has(n))m.push(led(n,p.groups.tax,`<TAXTYPE>GST</TAXTYPE><GSTDUTYHEAD>${{cgst:'Central Tax',sgst:'State Tax',igst:'Integrated Tax'}[h]}</GSTDUTYHEAD>`))});
  [p.round,p.other].forEach(n=>{if(used.has(n)&&!has(n))m.push(led(n,p.groups.exp))});
  const seen=new Set();V.forEach(v=>{if(seen.has(v.nm))return;seen.add(v.nm);if(has(v.nm))return;const a=pa[v.raw];
   m.push(led(v.nm,kind==='sale'?p.groups.debtors:p.groups.creditors,`<ISBILLWISEON>Yes</ISBILLWISEON><LEDGERMAILINGDETAILS.LIST><ADDRESS.LIST><ADDRESS>${esc(a.addr)}</ADDRESS></ADDRESS.LIST><STATE>${esc(a.st)}</STATE><COUNTRY>India</COUNTRY><APPLICABLEFROM>20260401</APPLICABLEFROM><MAILINGNAME>${esc(v.nm)}</MAILINGNAME></LEDGERMAILINGDETAILS.LIST><GSTREGISTRATIONTYPE>${a.rt}</GSTREGISTRATIONTYPE>${a.gstin?`<PARTYGSTIN>${esc(a.gstin)}</PARTYGSTIN>`:''}<LEDSTATENAME>${esc(a.st)}</LEDSTATENAME>`))});
