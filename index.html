@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PHARMASSIST to Tally XML</title>
+<style>
+:root{--bg:#f6f7f4;--card:#fff;--ink:#16231f;--mut:#5d6b66;--line:#d9dfdb;--ac:#0b6b57;--acb:#e1f0ea;--warn:#a85a00;--err:#b3261e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111a17;--card:#18231f;--ink:#e6efeb;--mut:#9bada6;--line:#2c3b36;--ac:#4cc3a6;--acb:#1c3a32;--warn:#e0a050;--err:#ff8a80}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Georgia,"Times New Roman",serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:26px;margin:0 0 2px}h2{font-size:18px;margin:0 0 10px}
+p.s{color:var(--mut);margin:0 0 18px;font-family:system-ui,sans-serif;font-size:14px}
+section{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:16px;margin-bottom:16px}
+section.off{opacity:.5;pointer-events:none}
+input,select,button{font:14px system-ui,sans-serif;color:var(--ink)}
+input,select{background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;width:100%}
+button{background:var(--ac);color:var(--bg);border:0;border-radius:4px;padding:8px 14px;cursor:pointer}
+button.g{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1 1 140px}.row>button{flex:0 0 auto}
+.tw{overflow-x:auto;max-height:340px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font:13px system-ui,sans-serif}
+th,td{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;white-space:nowrap}td.n,th.n{text-align:right}
+td input{min-width:170px}
+.k{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
+.k div{background:var(--acb);border-radius:4px;padding:8px 10px;font-family:system-ui,sans-serif}.k b{display:block;font-size:18px}
+.w{color:var(--warn)}.e{color:var(--err)}.m{color:var(--mut)}
+small{font-family:system-ui,sans-serif;color:var(--mut)}
+</style></head><body><main>
+<h1>PHARMASSIST to Tally XML</h1>
+<p class="s" id="intro">Pick a customer, map their Tally ledger names once, check the preview, then download the XML. Files are read in your browser and are not uploaded anywhere.</p>
+
+<section id="auth" style="display:none;max-width:420px;margin:30px auto"><h2>Sign in</h2>
+<div style="display:grid;gap:8px"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password (6+ characters)" autocomplete="current-password">
+<div class="row"><button id="li">Sign in</button><button id="su" class="g">Create account</button></div><p id="am" class="m" style="margin:0;font:13px system-ui"></p></div></section>
+<section id="wait" style="display:none"><h2>Waiting for approval</h2><p>Your account is created. You can use the converter once the administrator approves it.</p><button class="g" id="lo2">Sign out</button></section>
+<div id="app" style="display:none"><div class="row" style="margin-bottom:12px"><span id="who" class="m"></span><span id="sv" class="m"></span><button class="g" id="lo">Sign out</button></div>
+<section id="s1"><h2>Customer</h2>
+<div class="row"><select id="prof"></select><input id="newp" placeholder="New customer name"><button id="addp">Add customer</button></div>
+<p class="m" style="margin:8px 0 0;font:13px system-ui">Each customer name keeps its own mappings, saved to your account and available on any device you sign in from.</p></section>
+
+<section id="s2" class="off"><h2>Map to their Tally</h2>
+<div class="row"><label>Tally company name (exact)<input data-p="company"></label><label>Round-off ledger<input data-p="round"></label><label>Other charges ledger<input data-p="other"></label></div>
+<h2 style="margin-top:16px">Ledgers by GST rate</h2><div class="tw" id="slabs"></div>
+<h2 style="margin-top:16px">Tax ledgers</h2><div class="tw" id="taxl"></div>
+<h2 style="margin-top:16px">Voucher type for each PHARMASSIST prefix</h2><div class="tw" id="pref"></div></section>
+
+<section id="s3" class="off"><h2>Upload Excel</h2>
+<input type="file" id="file" accept=".xlsx,.xls,.XLSX"><p class="m" id="fmsg" style="margin:8px 0 0;font:13px system-ui">Sale report or purchase report is detected automatically.</p></section>
+
+<section id="s4" class="off"><h2>Preview</h2><div id="prev"><span class="m">Upload a file to see the preview.</span></div></section>
+
+<section id="s5" class="off"><h2>Download</h2>
+<div class="row" id="dl"></div><p class="m" style="font:13px system-ui;margin:10px 0 0">Import the masters file first, then the voucher files, on a test company before real data.</p></section>
+</div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),SL=['0','3','5','12','18','28','40'];
+const T=(a,b,c,d)=>[a,b,c,d];
+const CF={sale:{c:{no:'tran_no',pre:'pfx',date:'dt',name:'c_act_name',addr:'c_add',gstin:'to_gst_no',gt:'to_gst_type',total:'gst_total',st:'state_name',ref:'ref_no',rd:'ref_date'},
+ t:{0:['txb_0'],3:T('txb_3','cgst_15','sgst_15','igst_3'),5:T('txb_5','cgst_25','sgst_25','igst_5'),12:T('txb_12','cgst_6','sgst_6','igst_12'),18:T('txb_18','cgst_9','sgst_9','igst_18'),28:T('txb_28','cgst_14','sgst_14','igst_28'),40:T('txb_40','cgst_20','sgst_20','igst_40')},grp:'Sundry Debtors',inc:'Sales Accounts'},
+ pur:{c:{no:'n_srno',pre:'c_prefix',date:'d_tran_date',name:'c_act_name',addr:'c_add',gstin:'c_to_gst_no',gt:'n_to_gst_type',total:'n_tran_total',st:null,ref:'c_ref_no',rd:'d_ref_date'},
+ t:{0:['txb_0'],3:T('txb_3','cgst_1_5','sgst_1_5','igst_3'),5:T('txb_5','cgst_2_5','sgst_2_5','igst_5'),12:T('txb_12','cgst_6','sgst_6','igst_12'),18:T('txb_18','cgst_9','sgst_9','igst_18'),28:T('txb_28','cgst_14','sgst_14','igst_28'),40:T('txb_40','cgst_20','sgst_20','igst_40')},grp:'Sundry Creditors',inc:'Purchase Accounts'}};
+const ST=Object.fromEntries('01:Jammu & Kashmir,02:Himachal Pradesh,03:Punjab,04:Chandigarh,05:Uttarakhand,06:Haryana,07:Delhi,08:Rajasthan,09:Uttar Pradesh,10:Bihar,11:Sikkim,12:Arunachal Pradesh,13:Nagaland,14:Manipur,15:Mizoram,16:Tripura,17:Meghalaya,18:Assam,19:West Bengal,20:Jharkhand,21:Odisha,22:Chhattisgarh,23:Madhya Pradesh,24:Gujarat,26:Dadra & Nagar Haveli and Daman & Diu,27:Maharashtra,29:Karnataka,30:Goa,32:Kerala,33:Tamil Nadu,34:Puducherry,36:Telangana,37:Andhra Pradesh,38:Ladakh'.split(',').map(s=>s.split(':')));
+const VT=['Sales','Credit Note','Purchase','Debit Note'];
+const GT={registered:'Regular','0':'Regular','unreg with rcm':'Unregistered/Consumer','composite with rcm':'Composition','composite no rcm':'Composition'};
+const defP=()=>({company:'',round:'Round Off',other:'Other Charges',
+ sale:{slab:Object.fromEntries(SL.map(r=>[r,`Sales GST ${r}%`])),cgst:'Output CGST',sgst:'Output SGST',igst:'Output IGST'},
+ pur:{slab:Object.fromEntries(SL.map(r=>[r,`Purchase GST ${r}%`])),cgst:'Input CGST',sgst:'Input SGST',igst:'Input IGST'},
+ prefix:{I:'Sales',CR:'Credit Note',P:'Purchase',PR:'Debit Note',DV:'Purchase'},parties:{}});
+// ---- Supabase settings: paste yours from Project Settings > API ----
+const SB_URL='https://gktbumbjamhiybsgykuj.supabase.co',SB_KEY='sb_publishable_72d4r9kJ4y_mOkLJesvRpg_VNwg5P1B';
+let DB={},cur='',R=null,uid='',sb=null,tm;
+try{sb=supabase.createClient(SB_URL,SB_KEY)}catch(e){}
+const show=w=>['auth','wait','app'].forEach(i=>$('#'+i).style.display=i===w?'block':'none');
+const save=()=>{clearTimeout(tm);$('#sv').textContent='Saving…';tm=setTimeout(async()=>{if(!cur||!DB[cur])return;
+ const{error}=await sb.from('mappings').upsert({user_id:uid,name:cur,data:DB[cur],updated_at:new Date().toISOString()});
+ $('#sv').textContent=error?'Not saved: '+error.message:'Saved'},600)};
+const out=async()=>{await sb.auth.signOut();DB={};cur='';R=null;show('auth')};
+async function boot(){if(!sb){show('auth');$('#am').textContent='Add your Supabase URL and publishable key at the top of the script.';return}
+ const{data:{session}}=await sb.auth.getSession();if(!session){show('auth');return}
+ uid=session.user.id;$('#who').textContent=session.user.email;
+ const{data:pr}=await sb.from('profiles').select('approved').eq('id',uid).maybeSingle();
+ if(!pr||!pr.approved){show('wait');return}
+ const{data:rows,error}=await sb.from('mappings').select('name,data');
+ if(error){show('auth');$('#am').textContent=error.message;return}
+ DB={};rows.forEach(r=>DB[r.name]=r.data);cur=Object.keys(DB)[0]||'';show('app');drawProfiles()}
+async function auth(up){const em=$('#em').value.trim(),pw=$('#pw').value,m=$('#am');m.textContent='Please wait…';
+ if(!em||pw.length<6){m.textContent='Enter an email and a password of 6 or more characters.';return}
+ const r=up?await sb.auth.signUp({email:em,password:pw}):await sb.auth.signInWithPassword({email:em,password:pw});
+ if(r.error){m.textContent=r.error.message;return}
+ if(up&&!r.data.session){m.textContent='Account created. Confirm the email we sent, then sign in.';return}
+ boot()}
+$('#li').onclick=()=>auth(false);$('#su').onclick=()=>auth(true);$('#lo').onclick=out;$('#lo2').onclick=out;
+const P=()=>DB[cur];
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const num=v=>Math.abs(Math.round((+v||0)*100)),f2=n=>(n/100).toFixed(2),inr=n=>(n/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+function ymd(v){let d=typeof v==='number'?new Date(Math.round((v-25569)*864e5)):new Date(v);if(isNaN(d))return'';return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,'0')+String(d.getUTCDate()).padStart(2,'0')}
+const get=(o,p)=>p.split('.').reduce((a,k)=>a&&a[k],o);
+function setp(o,p,v){const k=p.split('.');let a=o;k.slice(0,-1).forEach(x=>a=a[x]);a[k[k.length-1]]=v}
+
+function drawProfiles(){const s=$('#prof');s.innerHTML=(Object.keys(DB).length?'':'<option value="">No customers yet</option>')+Object.keys(DB).map(n=>`<option ${n===cur?'selected':''}>${esc(n)}</option>`).join('');
+ ['s2','s3'].forEach(i=>$('#'+i).classList.toggle('off',!cur));if(cur)drawMap();}
+function drawMap(){const p=P(),inp=(path,w)=>`<input data-p="${path}" value="${esc(get(p,path)||'')}">`;
+ document.querySelectorAll('[data-p="company"],[data-p="round"],[data-p="other"]').forEach(i=>i.value=p[i.dataset.p]||'');
+ $('#slabs').innerHTML='<table><tr><th>GST rate</th><th>Sales ledger</th><th>Purchase ledger</th></tr>'+SL.map(r=>`<tr><td>${r}%</td><td>${inp('sale.slab.'+r)}</td><td>${inp('pur.slab.'+r)}</td></tr>`).join('')+'</table>';
+ $('#taxl').innerHTML='<table><tr><th></th><th>Sales (output)</th><th>Purchase (input)</th></tr>'+['cgst','sgst','igst'].map(k=>`<tr><td>${k.toUpperCase()}</td><td>${inp('sale.'+k)}</td><td>${inp('pur.'+k)}</td></tr>`).join('')+'</table>';
+ $('#pref').innerHTML='<table><tr><th>Prefix</th><th>Tally voucher type</th></tr>'+Object.keys(p.prefix).map(k=>`<tr><td>${k}</td><td><select data-p="prefix.${k}">${VT.map(v=>`<option ${v===p.prefix[k]?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')+'</table>';}
+document.addEventListener('input',e=>{const p=e.target.dataset&&e.target.dataset.p;if(p&&cur){setp(P(),p,e.target.value);save()}
+ const q=e.target.dataset&&e.target.dataset.q;if(q&&cur){const v=e.target.value.trim();if(v&&v!==q)P().parties[q]=v;else delete P().parties[q];save()}});
+$('#prof').onchange=e=>{cur=e.target.value;save();drawProfiles();R=null;$('#s4').classList.add('off');$('#s5').classList.add('off')};
+$('#addp').onclick=()=>{const n=$('#newp').value.trim();if(!n||DB[n])return;DB[n]=defP();cur=n;$('#newp').value='';save();drawProfiles()};
+
+$('#file').onchange=async e=>{const fl=e.target.files[0];if(!fl)return;$('#fmsg').textContent='Reading…';
+ try{const wb=XLSX.read(await fl.arrayBuffer(),{type:'array'}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null,raw:true});
+  const kind=rows[0]&&'tran_no' in rows[0]?'sale':rows[0]&&'n_srno' in rows[0]?'pur':null;
+  if(!kind){$('#fmsg').innerHTML='<span class="e">Columns not recognised. Expected the PHARMASSIST sale or purchase report.</span>';return}
+  $('#fmsg').textContent=`${fl.name}: ${rows.length} rows, detected as ${kind==='sale'?'sale':'purchase'} report.`;
+  R=convert(rows,kind);drawPreview()}catch(x){$('#fmsg').innerHTML='<span class="e">Could not read file: '+esc(x.message)+'</span>'}};
+
+function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={};
+ rows.forEach((r,i)=>{const pre=String(r[c.pre]).trim(),vt=p.prefix[pre];if(!vt){iss.push(['e',i+2,'Unknown prefix "'+pre+'", row skipped']);return}
+  const raw=String(r[c.name]).replace(/\s+/g,' ').trim(),nm=p.parties[raw]||raw,tot=num(r[c.total]);let ent=[],tb=0,tx=0;
+  SL.forEach(s=>{const a=C.t[s],t=num(r[a[0]]);if(t){ent.push([L.slab[s],t,'s']);tb+=t}
+   ['cgst','sgst','igst'].forEach((k,j)=>{const v=a[j+1]?num(r[a[j+1]]):0;if(v){ent.push([L[k],v,'t']);tx+=v}})});
+  const d=tot-tb-tx;if(d){const big=Math.abs(d)>100;ent.push([big?p.other:p.round,d,'r']);if(big)iss.push(['w',i+2,`Total differs from taxable+tax by ${f2(d)}; posted to "${p.other}"`])}
+  const g=typeof r[c.gstin]==='string'?r[c.gstin].trim():'',rt=GT[String(r[c.gt]).trim().toLowerCase()]||'Regular';
+  if(rt==='Regular'&&!g)iss.push(['w',i+2,`"${raw}" is Regular but has no GSTIN`]);
+  const st=(c.st&&r[c.st]?String(r[c.st]).split('-').pop().trim().replace(/\w\S*/g,w=>w[0].toUpperCase()+w.slice(1).toLowerCase()):ST[g.slice(0,2)])||'West Bengal';
+  const rf=r[c.ref]==null||String(r[c.ref]).trim()==='0'?'':String(r[c.ref]).trim();
+  if(!pa[raw])pa[raw]={tally:nm,addr:r[c.addr]||'',gstin:g,rt,st,n:0};pa[raw].n++;
+  V.push({vt,no:String(r[c.no]),date:ymd(r[c.date]),nm,g,rt,st,rf,rd:r[c.rd]?ymd(r[c.rd]):'',tot,ent,deb:vt==='Sales'||vt==='Debit Note',kind,raw})});
+ return{kind,V,iss,pa}}
+
+function drawPreview(){const{kind,V,iss,pa}=R,p=P(),by={};let tb=0,tx=0,gt=0;const sl={};
+ V.forEach(v=>{const b=by[v.vt]||(by[v.vt]={n:0,t:0});b.n++;b.t+=v.tot;gt+=v.tot;v.ent.forEach(e=>{if(e[2]==='s'){tb+=e[1];sl[e[0]]=(sl[e[0]]||0)+e[1]}if(e[2]==='t')tx+=e[1]})});
+ const dates=V.map(v=>v.date).sort(),pk=Object.keys(pa).sort(),ne=iss.filter(i=>i[0]==='e').length;
+ let h=`<div class="k"><div>Vouchers<b>${V.length.toLocaleString('en-IN')}</b></div><div>Date range<b>${dates[0]||'-'} to ${dates[dates.length-1]||'-'}</b></div><div>Taxable<b>${inr(tb)}</b></div><div>Tax<b>${inr(tx)}</b></div><div>Voucher total<b>${inr(gt)}</b></div></div>`;
+ h+='<div class="tw"><table><tr><th>Voucher type</th><th class="n">Count</th><th class="n">Total</th></tr>'+Object.entries(by).map(([k,b])=>`<tr><td>${k}</td><td class="n">${b.n}</td><td class="n">${inr(b.t)}</td></tr>`).join('')+'</table></div>';
+ h+='<h2 style="margin-top:16px">Ledger totals</h2><div class="tw"><table><tr><th>Ledger</th><th class="n">Amount</th></tr>'+Object.entries(sl).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="n">${inr(v)}</td></tr>`).join('')+'</table></div>';
+ h+=`<h2 style="margin-top:16px">Parties (${pk.length}) <small>Edit the Tally name if it differs. Changes are saved for this customer.</small></h2><div class="tw"><table><tr><th>PHARMASSIST name</th><th>Tally ledger name</th><th class="n">Vouchers</th></tr>`+pk.map(k=>`<tr><td>${esc(k)}</td><td><input data-q="${esc(k)}" value="${esc(pa[k].tally)}"></td><td class="n">${pa[k].n}</td></tr>`).join('')+'</table></div>';
+ h+=`<h2 style="margin-top:16px">Sample voucher</h2><div class="tw"><table><tr><th>Ledger</th><th class="n">Debit</th><th class="n">Credit</th></tr>`+(()=>{const v=V[0];if(!v)return'';const lines=[[v.nm,v.tot,v.deb]].concat(v.ent.map(e=>[e[0],Math.abs(e[1]),e[1]>0?!v.deb:v.deb]));return lines.map(l=>`<tr><td>${esc(l[0])}</td><td class="n">${l[2]?f2(l[1]):''}</td><td class="n">${l[2]?'':f2(l[1])}</td></tr>`).join('')})()+'</table></div>';
+ h+=`<h2 style="margin-top:16px">Checks</h2>`+(iss.length?`<div class="tw"><table>`+iss.slice(0,200).map(i=>`<tr class="${i[0]==='e'?'e':'w'}"><td>Row ${i[1]}</td><td>${esc(i[2])}</td></tr>`).join('')+`</table></div>`+(iss.length>200?`<small>Showing 200 of ${iss.length}.</small>`:''):'<span>No problems found. Every voucher balances.</span>');
+ $('#prev').innerHTML=h;$('#s4').classList.remove('off');$('#s5').classList.remove('off');drawDL()}
+
+const wrap=(co,rep,body)=>`<?xml version="1.0" encoding="UTF-8"?>\n<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>${rep}</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>${esc(co)}</SVCURRENTCOMPANY></STATICVARIABLES></REQUESTDESC><REQUESTDATA>${body}</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>`;
+const led=(n,par,x='')=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><LEDGER NAME="${esc(n)}" ACTION="Create"><NAME>${esc(n)}</NAME><PARENT>${esc(par)}</PARENT>${x}</LEDGER></TALLYMESSAGE>`;
+function masters(){const{kind,V,pa}=R,p=P(),C=CF[kind],L=p[kind],used=new Set(),m=[];
+ V.forEach(v=>v.ent.forEach(e=>used.add(e[0])));
+ SL.forEach(r=>{if(used.has(L.slab[r]))m.push(led(L.slab[r],C.inc))});
+ [['cgst','Central Tax'],['sgst','State Tax'],['igst','Integrated Tax']].forEach(([k,h])=>{if(used.has(L[k]))m.push(led(L[k],'Duties & Taxes',`<TAXTYPE>GST</TAXTYPE><GSTDUTYHEAD>${h}</GSTDUTYHEAD>`))});
+ [p.round,p.other].forEach(n=>{if(used.has(n))m.push(led(n,'Indirect Expenses'))});
+ const seen=new Set();V.forEach(v=>{if(seen.has(v.nm))return;seen.add(v.nm);const a=pa[v.raw];
+  m.push(led(v.nm,C.grp,`<ISBILLWISEON>Yes</ISBILLWISEON><LEDGERMAILINGDETAILS.LIST><ADDRESS.LIST><ADDRESS>${esc(a.addr)}</ADDRESS></ADDRESS.LIST><STATE>${esc(a.st)}</STATE><COUNTRY>India</COUNTRY><APPLICABLEFROM>20260401</APPLICABLEFROM><MAILINGNAME>${esc(v.nm)}</MAILINGNAME></LEDGERMAILINGDETAILS.LIST><GSTREGISTRATIONTYPE>${a.rt}</GSTREGISTRATIONTYPE>${a.gstin?`<PARTYGSTIN>${esc(a.gstin)}</PARTYGSTIN>`:''}<LEDSTATENAME>${esc(a.st)}</LEDSTATENAME>`))});
+ return wrap(p.company,'All Masters',m.join(''))}
+function vx(v){const a=v.deb?-v.tot:v.tot,bill=v.kind==='pur'&&v.rf?v.rf:v.no;
+ return`<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${v.vt}" ACTION="Create" OBJVIEW="Accounting Invoice View"><DATE>${v.date}</DATE><VOUCHERTYPENAME>${v.vt}</VOUCHERTYPENAME><VOUCHERNUMBER>${esc(v.no)}</VOUCHERNUMBER><PARTYLEDGERNAME>${esc(v.nm)}</PARTYLEDGERNAME><PARTYNAME>${esc(v.nm)}</PARTYNAME>${v.g?`<PARTYGSTIN>${esc(v.g)}</PARTYGSTIN>`:''}<GSTREGISTRATIONTYPE>${v.rt}</GSTREGISTRATIONTYPE><PLACEOFSUPPLY>${esc(v.st)}</PLACEOFSUPPLY><STATENAME>${esc(v.st)}</STATENAME>${v.rf?`<REFERENCE>${esc(v.rf)}</REFERENCE>${v.rd?`<REFERENCEDATE>${v.rd}</REFERENCEDATE>`:''}`:''}<ISINVOICE>Yes</ISINVOICE><PERSISTEDVIEW>Accounting Invoice View</PERSISTEDVIEW><EFFECTIVEDATE>${v.date}</EFFECTIVEDATE>`
+ +`<LEDGERENTRIES.LIST><LEDGERNAME>${esc(v.nm)}</LEDGERNAME><ISDEEMEDPOSITIVE>${v.deb?'Yes':'No'}</ISDEEMEDPOSITIVE><ISPARTYLEDGER>Yes</ISPARTYLEDGER><AMOUNT>${f2(a)}</AMOUNT><BILLALLOCATIONS.LIST><NAME>${esc(bill)}</NAME><BILLTYPE>New Ref</BILLTYPE><AMOUNT>${f2(a)}</AMOUNT></BILLALLOCATIONS.LIST></LEDGERENTRIES.LIST>`
+ +v.ent.map(e=>`<LEDGERENTRIES.LIST><LEDGERNAME>${esc(e[0])}</LEDGERNAME><ISDEEMEDPOSITIVE>${v.deb?'No':'Yes'}</ISDEEMEDPOSITIVE><AMOUNT>${f2(v.deb?e[1]:-e[1])}</AMOUNT></LEDGERENTRIES.LIST>`).join('')+'</VOUCHER></TALLYMESSAGE>'}
+function drawDL(){const n=5000,pg=Math.ceil(R.V.length/n),d=$('#dl');d.innerHTML='<button id="dm" class="g">1. Masters file</button>';
+ for(let i=0;i<pg;i++)d.insertAdjacentHTML('beforeend',`<button data-pg="${i}">${pg>1?`2. Vouchers part ${i+1} of ${pg}`:'2. Vouchers file'}</button>`);
+ $('#dm').onclick=()=>dl(masters(),`1_${R.kind}_masters.xml`);d.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{const i=+b.dataset.pg;
+  dl(wrap(P().company,'Vouchers',R.V.slice(i*n,i*n+n).map(vx).join('')),`2_${R.kind}_vouchers_${String(i+1).padStart(2,'0')}.xml`)})}
+function dl(txt,name){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'application/xml'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+boot();
+</script></body></html>
