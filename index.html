@@ -49,6 +49,7 @@ small{font-family:system-ui,sans-serif;color:var(--mut)}
 <h2 style="margin-top:16px">Ledgers by GST rate</h2><div class="tw" id="slabs"></div>
 <h2 style="margin-top:16px">Tax ledgers</h2><div class="tw" id="taxl"></div>
 <h2 style="margin-top:16px">Tally groups (the heads these ledgers sit under)</h2><div class="tw" id="grp"></div>
+<h2 style="margin-top:16px">GST type of parties (PHARMASSIST to Tally registration type)</h2><div class="tw" id="gtm"></div>
 <h2 style="margin-top:16px">Voucher type for each PHARMASSIST prefix</h2><div class="tw" id="pref"></div></section>
 
 <section id="s3" class="off"><h2>Upload Excel</h2>
@@ -73,9 +74,12 @@ const VT=['Sales','Credit Note','Purchase','Debit Note'];
 const GT={registered:'Regular','0':'Regular','unreg with rcm':'Unregistered/Consumer','composite with rcm':'Composition','composite no rcm':'Composition'};
 const HF={3:'1.5',5:'2.5',12:'6',18:'9',28:'14',40:'20'};
 const mkTx=pre=>Object.fromEntries(['cgst','sgst','igst'].map(h=>[h,Object.fromEntries(Object.keys(HF).map(r=>[r,`${pre} ${h.toUpperCase()} ${h==='igst'?r:HF[r]}%`]))]));
-const fix=d=>{const D0=defP();d.groups=Object.assign(D0.groups,d.groups||{});d.slabmode=d.slabmode||'rate';d.taxmode=d.taxmode||'single';
+const fix=d=>{const D0=defP();d.groups=Object.assign(D0.groups,d.groups||{});d.gtmap=Object.assign(D0.gtmap,d.gtmap||{});d.slabmode=d.slabmode||'rate';d.taxmode=d.taxmode||'single';
  ['sale','pur'].forEach(k=>{d[k].single=d[k].single||D0[k].single;d[k].tx=d[k].tx||D0[k].tx});return d};
-const defP=()=>({slabmode:'rate',taxmode:'single',company:'',round:'Round Off',other:'Other Charges',
+const GTL={registered:'Registered',unregwithrcm:'Un-Reg. with RCM',unregnorcm:'Un-Reg No RCM',compositewithrcm:'Composite with RCM',compositenorcm:'Composite No RCM',exportimport:'Export/Import',exempted:'Exempted',sez:'SEZ'};
+const GTT=['Regular','Composition','Unregistered/Consumer','Unknown','Government entity / TDS','Regular - SEZ','Regular-Deemed Exporter','Regular-Exports (EOU)','e-Commerce Operator','Input Service Distributor','Embassy/UN Body','Non-Resident Taxpayer'];
+const nzt=s=>String(s==null?'':s).toLowerCase().replace(/[^a-z]/g,'');
+const defP=()=>({gtmap:{registered:'Regular',unregwithrcm:'Unregistered/Consumer',unregnorcm:'Unregistered/Consumer',compositewithrcm:'Composition',compositenorcm:'Composition',exportimport:'Unregistered/Consumer',exempted:'Unregistered/Consumer',sez:'Regular - SEZ'},slabmode:'rate',taxmode:'single',company:'',round:'Round Off',other:'Other Charges',
  sale:{single:'Sales',tx:mkTx('Output'),slab:Object.fromEntries(SL.map(r=>[r,`Sales GST ${r}%`])),cgst:'Output CGST',sgst:'Output SGST',igst:'Output IGST'},
  pur:{single:'Purchase',tx:mkTx('Input'),slab:Object.fromEntries(SL.map(r=>[r,`Purchase GST ${r}%`])),cgst:'Input CGST',sgst:'Input SGST',igst:'Input IGST'},
  groups:{debtors:'Sundry Debtors',creditors:'Sundry Creditors',sales:'Sales Accounts',purchase:'Purchase Accounts',tax:'Duties & Taxes',exp:'Indirect Expenses'},
@@ -94,8 +98,10 @@ async function boot(){if(!sb){show('auth');$('#am').textContent='Add your Supaba
  if(recov){show('reset');return}
  uid=session.user.id;$('#who').textContent=session.user.email;
  const{data:pr}=await sb.from('profiles').select('approved').eq('id',uid).maybeSingle();
+ if(recov){show('reset');return}
  if(!pr||!pr.approved){show('wait');return}
  const{data:rows,error}=await sb.from('mappings').select('name,data');
+ if(recov){show('reset');return}
  if(error){show('auth');$('#am').textContent=error.message;return}
  DB={};rows.forEach(r=>{DB[r.name]=fix(r.data)});cur=Object.keys(DB)[0]||'';show('app');drawProfiles()}
 async function auth(up){const em=$('#em').value.trim(),pw=$('#pw').value,m=$('#am');m.textContent='Please wait…';
@@ -129,6 +135,7 @@ function drawMap(){const p=P(),inp=(path,l)=>`<input data-p="${path}" ${l?'list=
  drawTL();
  const GL={debtors:'Customer ledgers (sales parties)',creditors:'Supplier ledgers (purchase parties)',sales:'Sales ledgers',purchase:'Purchase ledgers',tax:'GST tax ledgers',exp:'Round-off and other charges'};
  $('#grp').innerHTML='<table><tr><th>Used for</th><th>Group name in their Tally</th></tr>'+Object.keys(GL).map(k=>`<tr><td>${GL[k]}</td><td>${inp('groups.'+k)}</td></tr>`).join('')+'</table>';
+ $('#gtm').innerHTML='<table><tr><th>PHARMASSIST GST type</th><th>Tally registration type</th></tr>'+Object.keys(GTL).map(k=>`<tr><td>${GTL[k]}</td><td><select data-p="gtmap.${k}">${GTT.map(v=>`<option ${v===p.gtmap[k]?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')+'</table>';
  $('#pref').innerHTML='<table><tr><th>Prefix</th><th>Tally voucher type</th></tr>'+Object.keys(p.prefix).map(k=>`<tr><td>${k}</td><td><select data-p="prefix.${k}">${VT.map(v=>`<option ${v===p.prefix[k]?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')+'</table>';}
 const nz=s=>String(s).toUpperCase().replace(/[^A-Z0-9]/g,'');
 function drawTL(){const a=P().tally||[];$('#tl').innerHTML=a.slice(0,20000).map(n=>`<option value="${esc(n)}">`).join('');$('#tmsg').textContent=a.length?`${a.length} ledgers loaded from their Tally. Start typing in a ledger box to pick from them.`:'No ledger list loaded yet.'}
@@ -163,14 +170,14 @@ $('#file').onchange=async e=>{const fl=e.target.files[0];if(!fl)return;$('#fmsg'
   $('#fmsg').textContent=`${fl.name}: ${rows.length} rows, detected as ${kind==='sale'?'sale':'purchase'} report.`;
   R=convert(rows,kind);drawPreview()}catch(x){$('#fmsg').innerHTML='<span class="e">Could not read file: '+esc(x.message)+'</span>'}};
 
-function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={},tm={};(p.tally||[]).forEach(n=>tm[nz(n)]=n);
+function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={},tm={},gtw={};(p.tally||[]).forEach(n=>tm[nz(n)]=n);
  rows.forEach((r,i)=>{const pre=String(r[c.pre]).trim(),vt=p.prefix[pre];if(!vt){iss.push(['e',i+2,'Unknown prefix "'+pre+'", row skipped']);return}
   const raw=String(r[c.name]).replace(/\s+/g,' ').trim(),nm=p.parties[raw]||tm[nz(raw)]||raw,tot=num(r[c.total]);let ent=[],tb=0,tx=0;
   SL.forEach(s=>{const a=C.t[s],t=num(r[a[0]]);if(t){ent.push([p.slabmode==='single'?L.single:L.slab[s],t,'s']);tb+=t}
    ['cgst','sgst','igst'].forEach((k,j)=>{const v=a[j+1]?num(r[a[j+1]]):0;if(v){ent.push([p.taxmode==='rate'&&s!=='0'?L.tx[k][s]:L[k],v,'t',k]);tx+=v}})});
   const mg={};ent.forEach(e=>{const key=e[0]+'|'+e[2];if(mg[key])mg[key][1]+=e[1];else mg[key]=e.slice()});ent=Object.values(mg);
   const d=tot-tb-tx;if(d){const big=Math.abs(d)>100;ent.push([big?p.other:p.round,d,'r']);if(big)iss.push(['w',i+2,`Total differs from taxable+tax by ${f2(d)}; posted to "${p.other}"`])}
-  const g=typeof r[c.gstin]==='string'?r[c.gstin].trim():'',rt=GT[String(r[c.gt]).trim().toLowerCase()]||'Regular';
+  const g=typeof r[c.gstin]==='string'?r[c.gstin].trim():'',gk=nzt(r[c.gt]),rt=p.gtmap[gk]||(g?'Regular':'Unregistered/Consumer');if(gk&&!p.gtmap[gk]&&!gtw[gk]){gtw[gk]=1;iss.push(['w',i+2,`Unknown GST type "${r[c.gt]}": treated by GSTIN`])}
   if(rt==='Regular'&&!g)iss.push(['w',i+2,`"${raw}" is Regular but has no GSTIN`]);
   const st=(c.st&&r[c.st]?String(r[c.st]).split('-').pop().trim().replace(/\w\S*/g,w=>w[0].toUpperCase()+w.slice(1).toLowerCase()):ST[g.slice(0,2)])||'West Bengal';
   const rf=r[c.ref]==null||String(r[c.ref]).trim()==='0'?'':String(r[c.ref]).trim();
@@ -198,7 +205,7 @@ function masters(){const{kind,V,pa}=R,p=P(),C=CF[kind],L=p[kind],used=new Set(),
  tx.forEach((h,n)=>{if(!has(n))m.push(led(n,p.groups.tax,`<TAXTYPE>GST</TAXTYPE><GSTDUTYHEAD>${{cgst:'Central Tax',sgst:'State Tax',igst:'Integrated Tax'}[h]}</GSTDUTYHEAD>`))});
  [p.round,p.other].forEach(n=>{if(used.has(n)&&!has(n))m.push(led(n,p.groups.exp))});
  const seen=new Set();V.forEach(v=>{if(seen.has(v.nm))return;seen.add(v.nm);if(has(v.nm))return;const a=pa[v.raw];
-  m.push(led(v.nm,kind==='sale'?p.groups.debtors:p.groups.creditors,`<ISBILLWISEON>Yes</ISBILLWISEON>${a.gstin?`<LEDGSTREGDETAILS.LIST><APPLICABLEFROM>20260401</APPLICABLEFROM><GSTREGISTRATIONTYPE>${a.rt}</GSTREGISTRATIONTYPE><PLACEOFSUPPLY>${esc(a.st)}</PLACEOFSUPPLY><GSTIN>${esc(a.gstin)}</GSTIN><ISOTHTERRITORYASSESSEE>No</ISOTHTERRITORYASSESSEE><CONSIDERPURCHASEFOREXPORT>No</CONSIDERPURCHASEFOREXPORT><ISTRANSPORTER>No</ISTRANSPORTER><ISCOMMONPARTY>No</ISCOMMONPARTY></LEDGSTREGDETAILS.LIST>`:''}<LEDMAILINGDETAILS.LIST><ADDRESS.LIST><ADDRESS>${esc(a.addr)}</ADDRESS></ADDRESS.LIST><STATE>${esc(a.st)}</STATE><COUNTRY>India</COUNTRY><APPLICABLEFROM>20260401</APPLICABLEFROM><MAILINGNAME>${esc(v.nm)}</MAILINGNAME></LEDMAILINGDETAILS.LIST>${a.gstin?'':`<GSTREGISTRATIONTYPE>${a.rt}</GSTREGISTRATIONTYPE><LEDSTATENAME>${esc(a.st)}</LEDSTATENAME>`}`))});
+  m.push(led(v.nm,kind==='sale'?p.groups.debtors:p.groups.creditors,`<ISBILLWISEON>Yes</ISBILLWISEON><LEDGSTREGDETAILS.LIST><APPLICABLEFROM>20260401</APPLICABLEFROM><GSTREGISTRATIONTYPE>${esc(a.rt)}</GSTREGISTRATIONTYPE><PLACEOFSUPPLY>${esc(a.st)}</PLACEOFSUPPLY>${a.gstin?`<GSTIN>${esc(a.gstin)}</GSTIN>`:''}<ISOTHTERRITORYASSESSEE>No</ISOTHTERRITORYASSESSEE><CONSIDERPURCHASEFOREXPORT>No</CONSIDERPURCHASEFOREXPORT><ISTRANSPORTER>No</ISTRANSPORTER><ISCOMMONPARTY>No</ISCOMMONPARTY></LEDGSTREGDETAILS.LIST><LEDMAILINGDETAILS.LIST><ADDRESS.LIST><ADDRESS>${esc(a.addr)}</ADDRESS></ADDRESS.LIST><STATE>${esc(a.st)}</STATE><COUNTRY>India</COUNTRY><APPLICABLEFROM>20260401</APPLICABLEFROM><MAILINGNAME>${esc(v.nm)}</MAILINGNAME></LEDMAILINGDETAILS.LIST>`))});
  return wrap(p.company,'All Masters',m.join(''))}
 function vx(v){const a=v.deb?-v.tot:v.tot,bill=v.kind==='pur'&&v.rf?v.rf:v.no;
  return`<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${v.vt}" ACTION="Create" OBJVIEW="Accounting Invoice View"><DATE>${v.date}</DATE><VOUCHERTYPENAME>${v.vt}</VOUCHERTYPENAME><VOUCHERNUMBER>${esc(v.no)}</VOUCHERNUMBER><PARTYLEDGERNAME>${esc(v.nm)}</PARTYLEDGERNAME><PARTYNAME>${esc(v.nm)}</PARTYNAME>${v.g?`<PARTYGSTIN>${esc(v.g)}</PARTYGSTIN>`:''}<GSTREGISTRATIONTYPE>${v.rt}</GSTREGISTRATIONTYPE><PLACEOFSUPPLY>${esc(v.st)}</PLACEOFSUPPLY><STATENAME>${esc(v.st)}</STATENAME>${v.rf?`<REFERENCE>${esc(v.rf)}</REFERENCE>${v.rd?`<REFERENCEDATE>${v.rd}</REFERENCEDATE>`:''}`:''}<ISINVOICE>Yes</ISINVOICE><PERSISTEDVIEW>Accounting Invoice View</PERSISTEDVIEW><EFFECTIVEDATE>${v.date}</EFFECTIVEDATE>`
