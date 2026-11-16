@@ -32,7 +32,9 @@ small{font-family:system-ui,sans-serif;color:var(--mut)}
 
 <section id="auth" style="display:none;max-width:420px;margin:30px auto"><h2>Sign in</h2>
 <div style="display:grid;gap:8px"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password (6+ characters)" autocomplete="current-password">
-<div class="row"><button id="li">Sign in</button><button id="su" class="g">Create account</button></div><p id="am" class="m" style="margin:0;font:13px system-ui"></p></div></section>
+<div class="row"><button id="li">Sign in</button><button id="su" class="g">Create account</button><button id="fp" type="button" class="g">Forgot password?</button></div><p id="am" class="m" style="margin:0;font:13px system-ui"></p></div></section>
+<section id="reset" style="display:none;max-width:420px;margin:30px auto"><h2>Set a new password</h2>
+<div style="display:grid;gap:8px"><input id="np" type="password" placeholder="New password (6+ characters)" autocomplete="new-password"><button id="sp" type="button">Save new password</button><p id="rm" class="m" style="margin:0;font:13px system-ui"></p></div></section>
 <section id="wait" style="display:none"><h2>Waiting for approval</h2><p>Your account is created. You can use the converter once the administrator approves it.</p><button class="g" id="lo2">Sign out</button></section>
 <div id="app" style="display:none"><div class="row" style="margin-bottom:12px"><span id="who" class="m"></span><span id="sv" class="m"></span><button class="g" id="lo">Sign out</button></div>
 <section id="s1"><h2>Customer</h2>
@@ -80,15 +82,16 @@ const defP=()=>({slabmode:'rate',taxmode:'single',company:'',round:'Round Off',o
  prefix:{I:'Sales',CR:'Credit Note',P:'Purchase',PR:'Debit Note',DV:'Purchase'},parties:{}});
 // ---- Supabase settings: paste yours from Project Settings > API ----
 const SB_URL='https://gktbumbjamhiybsgykuj.supabase.co',SB_KEY='sb_publishable_72d4r9kJ4y_mOkLJesvRpg_VNwg5P1B';
-let DB={},cur='',R=null,uid='',sb=null,tm;
+let DB={},cur='',R=null,uid='',sb=null,tm,recov=/type=recovery/.test(location.hash);
 try{sb=supabase.createClient(SB_URL,SB_KEY)}catch(e){}
-const show=w=>['auth','wait','app'].forEach(i=>$('#'+i).style.display=i===w?'block':'none');
+const show=w=>['auth','wait','app','reset'].forEach(i=>$('#'+i).style.display=i===w?'block':'none');
 const save=()=>{clearTimeout(tm);$('#sv').textContent='Saving…';tm=setTimeout(async()=>{if(!cur||!DB[cur])return;
  const{error}=await sb.from('mappings').upsert({user_id:uid,name:cur,data:DB[cur],updated_at:new Date().toISOString()});
  $('#sv').textContent=error?'Not saved: '+error.message:'Saved'},600)};
 const out=async()=>{await sb.auth.signOut();DB={};cur='';R=null;show('auth')};
 async function boot(){if(!sb){show('auth');$('#am').textContent='Add your Supabase URL and publishable key at the top of the script.';return}
  const{data:{session}}=await sb.auth.getSession();if(!session){show('auth');return}
+ if(recov){show('reset');return}
  uid=session.user.id;$('#who').textContent=session.user.email;
  const{data:pr}=await sb.from('profiles').select('approved').eq('id',uid).maybeSingle();
  if(!pr||!pr.approved){show('wait');return}
@@ -101,6 +104,13 @@ async function auth(up){const em=$('#em').value.trim(),pw=$('#pw').value,m=$('#a
  if(r.error){m.textContent=r.error.message;return}
  if(up&&!r.data.session){m.textContent='Account created. Confirm the email we sent, then sign in.';return}
  boot()}
+if(sb)sb.auth.onAuthStateChange(ev=>{if(ev==='PASSWORD_RECOVERY'){recov=true;show('reset')}});
+$('#fp').onclick=async()=>{const em=$('#em').value.trim(),m=$('#am');if(!sb)return;if(!em){m.textContent='Type your email above first, then click Forgot password.';return}
+ m.textContent='Please wait…';const{error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname});
+ m.textContent=error?error.message:'If this email has an account, a reset link has been sent. Check your inbox and spam folder.'};
+$('#sp').onclick=async()=>{const pw=$('#np').value,m=$('#rm');if(pw.length<6){m.textContent='Use 6 or more characters.';return}
+ const{error}=await sb.auth.updateUser({password:pw});if(error){m.textContent=error.message;return}
+ recov=false;history.replaceState(null,'',location.pathname);m.textContent='';boot()};
 $('#li').onclick=()=>auth(false);$('#su').onclick=()=>auth(true);$('#lo').onclick=out;$('#lo2').onclick=out;
 const P=()=>DB[cur];
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
