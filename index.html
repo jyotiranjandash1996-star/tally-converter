@@ -121,7 +121,7 @@ $('#li').onclick=()=>auth(false);$('#su').onclick=()=>auth(true);$('#lo').onclic
 const P=()=>DB[cur];
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const num=v=>Math.abs(Math.round((+v||0)*100)),f2=n=>(n/100).toFixed(2),inr=n=>(n/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
-function ymd(v){let d=typeof v==='number'?new Date(Math.round((v-25569)*864e5)):new Date(v);if(isNaN(d))return'';return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,'0')+String(d.getUTCDate()).padStart(2,'0')}
+function ymd(v){let d;if(typeof v==='number')d=new Date(Math.round((v-25569)*864e5));else{const t=String(v==null?'':v).trim(),m=t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);d=m?new Date(Date.UTC(+m[3],+m[2]-1,+m[1])):new Date(t)}if(isNaN(d))return'';return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,'0')+String(d.getUTCDate()).padStart(2,'0')}
 const get=(o,p)=>p.split('.').reduce((a,k)=>a&&a[k],o);
 function setp(o,p,v){const k=p.split('.');let a=o;k.slice(0,-1).forEach(x=>a=a[x]);a[k[k.length-1]]=v}
 
@@ -172,17 +172,19 @@ $('#file').onchange=async e=>{const fl=e.target.files[0];if(!fl)return;$('#fmsg'
 
 function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={},tm={},gtw={};(p.tally||[]).forEach(n=>tm[nz(n)]=n);
  rows.forEach((r,i)=>{const pre=String(r[c.pre]).trim(),vt=p.prefix[pre];if(!vt){iss.push(['e',i+2,'Unknown prefix "'+pre+'", row skipped']);return}
+  const dtv=ymd(r[c.date]);if(!dtv){iss.push(['e',i+2,'Date missing or unreadable ("'+r[c.date]+'"), row skipped']);return}
   const raw=String(r[c.name]).replace(/\s+/g,' ').trim(),nm=p.parties[raw]||tm[nz(raw)]||raw,tot=num(r[c.total]);let ent=[],tb=0,tx=0;
   SL.forEach(s=>{const a=C.t[s],t=num(r[a[0]]);if(t){ent.push([p.slabmode==='single'?L.single:L.slab[s],t,'s']);tb+=t}
    ['cgst','sgst','igst'].forEach((k,j)=>{const v=a[j+1]?num(r[a[j+1]]):0;if(v){ent.push([p.taxmode==='rate'&&s!=='0'?L.tx[k][s]:L[k],v,'t',k]);tx+=v}})});
   const mg={};ent.forEach(e=>{const key=e[0]+'|'+e[2];if(mg[key])mg[key][1]+=e[1];else mg[key]=e.slice()});ent=Object.values(mg);
+  if(!ent.length||!tot){iss.push(['e',i+2,'No taxable or tax amount (total '+f2(tot)+'), row skipped']);return}
   const d=tot-tb-tx;if(d){const big=Math.abs(d)>100;ent.push([big?p.other:p.round,d,'r']);if(big)iss.push(['w',i+2,`Total differs from taxable+tax by ${f2(d)}; posted to "${p.other}"`])}
   const g=typeof r[c.gstin]==='string'?r[c.gstin].trim():'',gk=nzt(r[c.gt]),rt=p.gtmap[gk]||(g?'Regular':'Unregistered/Consumer');if(gk&&!p.gtmap[gk]&&!gtw[gk]){gtw[gk]=1;iss.push(['w',i+2,`Unknown GST type "${r[c.gt]}": treated by GSTIN`])}
   if(rt==='Regular'&&!g)iss.push(['w',i+2,`"${raw}" is Regular but has no GSTIN`]);
   const st=(c.st&&r[c.st]?String(r[c.st]).split('-').pop().trim().replace(/\w\S*/g,w=>w[0].toUpperCase()+w.slice(1).toLowerCase()):ST[g.slice(0,2)])||'West Bengal';
   const rf=r[c.ref]==null||String(r[c.ref]).trim()==='0'?'':String(r[c.ref]).trim();
   if(!pa[raw])pa[raw]={tally:nm,addr:r[c.addr]||'',gstin:g,rt,st,n:0};pa[raw].n++;
-  V.push({vt,no:String(r[c.no]),date:ymd(r[c.date]),nm,g,rt,st,rf,rd:r[c.rd]?ymd(r[c.rd]):'',tot,ent,deb:vt==='Sales'||vt==='Debit Note',kind,raw})});
+  V.push({vt,no:String(r[c.no]),date:dtv,nm,g,rt,st,rf,rd:r[c.rd]?ymd(r[c.rd]):'',tot,ent,deb:vt==='Sales'||vt==='Debit Note',kind,raw})});
  return{kind,V,iss,pa}}
 
 function drawPreview(){const{kind,V,iss,pa}=R,p=P(),by={};let tb=0,tx=0,gt=0;const sl={};
