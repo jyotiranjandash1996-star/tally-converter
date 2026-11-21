@@ -53,14 +53,15 @@ small{font-family:system-ui,sans-serif;color:var(--mut)}
 <h2 style="margin-top:16px">Voucher type for each PHARMASSIST prefix</h2><div class="tw" id="pref"></div></section>
 
 <section id="s3" class="off"><h2>Upload Excel</h2>
-<input type="file" id="file" accept=".xlsx,.xls,.XLSX"><p class="m" id="fmsg" style="margin:8px 0 0;font:13px system-ui">Sale report or purchase report is detected automatically.</p></section>
+<input type="file" id="file" accept=".xlsx,.xls,.XLSX"><div id="pg" style="display:none;margin:8px 0"><div style="background:var(--line);border-radius:4px;height:8px"><div id="pgb" style="background:var(--ac);height:8px;border-radius:4px;width:0;transition:width .2s"></div></div><small id="pgt"></small></div><p class="m" id="fmsg" style="margin:8px 0 0;font:13px system-ui">Sale report or purchase report is detected automatically.</p></section>
 
 <section id="s4" class="off"><h2>Preview</h2><div id="prev"><span class="m">Upload a file to see the preview.</span></div></section>
 
 <section id="s5" class="off"><h2>Download</h2>
-<div class="row" id="dl"></div><p class="m" style="font:13px system-ui;margin:10px 0 0">Import the masters file first, then the voucher files, on a test company before real data.</p></section>
+<div class="row" id="dl"></div><div id="lg" style="margin-top:8px"></div><p class="m" style="font:13px system-ui;margin:10px 0 0">Import the masters file first, then the voucher files, on a test company before real data.</p></section>
 </div></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.9/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const $=s=>document.querySelector(s),SL=['0','3','5','12','18','28','40'];
@@ -137,6 +138,12 @@ function drawMap(){const p=P(),inp=(path,l)=>`<input data-p="${path}" ${l?'list=
  $('#grp').innerHTML='<table><tr><th>Used for</th><th>Group name in their Tally</th></tr>'+Object.keys(GL).map(k=>`<tr><td>${GL[k]}</td><td>${inp('groups.'+k)}</td></tr>`).join('')+'</table>';
  $('#gtm').innerHTML='<table><tr><th>PHARMASSIST GST type</th><th>Tally registration type</th></tr>'+Object.keys(GTL).map(k=>`<tr><td>${GTL[k]}</td><td><select data-p="gtmap.${k}">${GTT.map(v=>`<option ${v===p.gtmap[k]?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')+'</table>';
  $('#pref').innerHTML='<table><tr><th>Prefix</th><th>Tally voucher type</th></tr>'+Object.keys(p.prefix).map(k=>`<tr><td>${k}</td><td><select data-p="prefix.${k}">${VT.map(v=>`<option ${v===p.prefix[k]?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')+'</table>';}
+const tick=()=>new Promise(r=>setTimeout(r));
+function setProg(t,f){$('#pg').style.display='block';$('#pgb').style.width=Math.round(f*100)+'%';$('#pgt').textContent=t;if(f>=1)setTimeout(()=>$('#pg').style.display='none',1500)}
+const isNum=s=>/^\d{1,15}$/.test(s);
+function inH(h,vt,no){const a=h&&h[vt];if(!a||!isNum(no))return false;const n=+no;let lo=0,hi=a.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(n<a[m][0])hi=m-1;else if(n>a[m][1])lo=m+1;else return true}return false}
+function addH(h,vt,nums){const a=(h[vt]||[]).concat(nums.map(n=>[n,n])).sort((x,y)=>x[0]-y[0]),o=[];a.forEach(r=>{const l=o[o.length-1];if(l&&r[0]<=l[1]+1)l[1]=Math.max(l[1],r[1]);else o.push([r[0],r[1]])});h[vt]=o}
+const getV=()=>{const s=$('#skipd');return s&&s.checked?R.V.filter(v=>!v.dup):R.V};
 const nz=s=>String(s).toUpperCase().replace(/[^A-Z0-9]/g,'');
 function drawTL(){const a=P().tally||[];$('#tl').innerHTML=a.slice(0,20000).map(n=>`<option value="${esc(n)}">`).join('');$('#tmsg').textContent=a.length?`${a.length} ledgers loaded from their Tally. Start typing in a ledger box to pick from them.`:'No ledger list loaded yet.'}
 $('#tbtn').onclick=()=>$('#tfile').click();
@@ -163,15 +170,15 @@ document.addEventListener('input',e=>{const p=e.target.dataset&&e.target.dataset
 $('#prof').onchange=e=>{cur=e.target.value;save();drawProfiles();R=null;$('#s4').classList.add('off');$('#s5').classList.add('off')};
 $('#addp').onclick=()=>{const n=$('#newp').value.trim();if(!n||DB[n])return;DB[n]=defP();cur=n;$('#newp').value='';save();drawProfiles()};
 
-$('#file').onchange=async e=>{const fl=e.target.files[0];if(!fl)return;$('#fmsg').textContent='Reading…';
+$('#file').onchange=async e=>{const fl=e.target.files[0];if(!fl)return;$('#fmsg').textContent='Reading…';setProg('Reading file…',0.03);await tick();
  try{const wb=XLSX.read(await fl.arrayBuffer(),{type:'array'}),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null,raw:true});
   const kind=rows[0]&&'tran_no' in rows[0]?'sale':rows[0]&&'n_srno' in rows[0]?'pur':null;
   if(!kind){$('#fmsg').innerHTML='<span class="e">Columns not recognised. Expected the PHARMASSIST sale or purchase report.</span>';return}
   $('#fmsg').textContent=`${fl.name}: ${rows.length} rows, detected as ${kind==='sale'?'sale':'purchase'} report.`;
-  R=convert(rows,kind);drawPreview()}catch(x){$('#fmsg').innerHTML='<span class="e">Could not read file: '+esc(x.message)+'</span>'}};
+  R=await convert(rows,kind,f=>setProg('Checking vouchers… '+Math.round(f*100)+'%',0.1+f*0.9));R.file=fl.name;const hh=(P().hist||{})[kind]||{};R.dups=R.V.filter(v=>(v.dup=inH(hh,v.vt,v.no))).length;setProg('Ready',1);drawPreview()}catch(x){$('#fmsg').innerHTML='<span class="e">Could not read file: '+esc(x.message)+'</span>'}};
 
-function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={},tm={},gtw={};(p.tally||[]).forEach(n=>tm[nz(n)]=n);
- rows.forEach((r,i)=>{const pre=String(r[c.pre]).trim(),vt=p.prefix[pre];if(!vt){iss.push(['e',i+2,'Unknown prefix "'+pre+'", row skipped']);return}
+async function convert(rows,kind,prog){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],pa={},tm={},gtw={};(p.tally||[]).forEach(n=>tm[nz(n)]=n);
+ const one=(r,i)=>{const pre=String(r[c.pre]).trim(),vt=p.prefix[pre];if(!vt){iss.push(['e',i+2,'Unknown prefix "'+pre+'", row skipped']);return}
   const raw=String(r[c.name]).replace(/\s+/g,' ').trim(),nm=p.parties[raw]||tm[nz(raw)]||raw,tot=num(r[c.total]);let ent=[],tb=0,tx=0;
   SL.forEach(s=>{const a=C.t[s],t=num(r[a[0]]);if(t){ent.push([p.slabmode==='single'?L.single:L.slab[s],t,'s']);tb+=t}
    ['cgst','sgst','igst'].forEach((k,j)=>{const v=a[j+1]?num(r[a[j+1]]):0;if(v){ent.push([p.taxmode==='rate'&&s!=='0'?L.tx[k][s]:L[k],v,'t',k]);tx+=v}})});
@@ -182,13 +189,15 @@ function convert(rows,kind){const C=CF[kind],c=C.c,p=P(),L=p[kind],V=[],iss=[],p
   const st=(c.st&&r[c.st]?String(r[c.st]).split('-').pop().trim().replace(/\w\S*/g,w=>w[0].toUpperCase()+w.slice(1).toLowerCase()):ST[g.slice(0,2)])||'West Bengal';
   const rf=r[c.ref]==null||String(r[c.ref]).trim()==='0'?'':String(r[c.ref]).trim();
   if(!pa[raw])pa[raw]={tally:nm,addr:r[c.addr]||'',gstin:g,rt,st,n:0};pa[raw].n++;
-  V.push({vt,no:String(r[c.no]),date:ymd(r[c.date]),nm,g,rt,st,rf,rd:r[c.rd]?ymd(r[c.rd]):'',tot,ent,deb:vt==='Sales'||vt==='Debit Note',kind,raw})});
+  V.push({vt,no:String(r[c.no]),date:ymd(r[c.date]),nm,g,rt,st,rf,rd:r[c.rd]?ymd(r[c.rd]):'',tot,ent,deb:vt==='Sales'||vt==='Debit Note',kind,raw})};
+ for(let i=0;i<rows.length;i++){one(rows[i],i);if(i%3000===2999){prog&&prog(i/rows.length);await tick()}}
  return{kind,V,iss,pa}}
 
 function drawPreview(){const{kind,V,iss,pa}=R,p=P(),by={};let tb=0,tx=0,gt=0;const sl={};
  V.forEach(v=>{const b=by[v.vt]||(by[v.vt]={n:0,t:0});b.n++;b.t+=v.tot;gt+=v.tot;v.ent.forEach(e=>{if(e[2]==='s'){tb+=e[1];sl[e[0]]=(sl[e[0]]||0)+e[1]}if(e[2]==='t')tx+=e[1]})});
  const TS=new Set((p.tally||[]).map(n=>n.toUpperCase())),dates=V.map(v=>v.date).sort(),pk=Object.keys(pa).sort(),ne=iss.filter(i=>i[0]==='e').length;
  let h=`<div class="k"><div>Vouchers<b>${V.length.toLocaleString('en-IN')}</b></div><div>Date range<b>${dates[0]||'-'} to ${dates[dates.length-1]||'-'}</b></div><div>Taxable<b>${inr(tb)}</b></div><div>Tax<b>${inr(tx)}</b></div><div>Voucher total<b>${inr(gt)}</b></div></div>`;
+ h+=R.dups?`<p class="w">${R.dups.toLocaleString('en-IN')} of these vouchers were already converted for this customer. <label><input type="checkbox" id="skipd" checked> Skip them in the download</label></p>`:'';
  h+='<div class="tw"><table><tr><th>Voucher type</th><th class="n">Count</th><th class="n">Total</th></tr>'+Object.entries(by).map(([k,b])=>`<tr><td>${k}</td><td class="n">${b.n}</td><td class="n">${inr(b.t)}</td></tr>`).join('')+'</table></div>';
  h+='<h2 style="margin-top:16px">Ledger totals</h2><div class="tw"><table><tr><th>Ledger</th><th class="n">Amount</th></tr>'+Object.entries(sl).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="n">${inr(v)}</td></tr>`).join('')+'</table></div>';
  h+=`<h2 style="margin-top:16px">Parties (${pk.length}) <small>Edit the Tally name if it differs. Changes are saved for this customer.</small></h2><div class="tw"><table><tr><th>PHARMASSIST name</th><th>Tally ledger name</th><th>Status</th><th class="n">Vouchers</th></tr>`+pk.map(k=>`<tr><td>${esc(k)}</td><td><input data-q="${esc(k)}" list="tl" value="${esc(pa[k].tally)}"></td><td>${TS.size?(TS.has(pa[k].tally.toUpperCase())?'In Tally':'Will be created'):''}</td><td class="n">${pa[k].n}</td></tr>`).join('')+'</table></div>';
@@ -198,7 +207,7 @@ function drawPreview(){const{kind,V,iss,pa}=R,p=P(),by={};let tb=0,tx=0,gt=0;con
 
 const wrap=(co,rep,body)=>`<?xml version="1.0" encoding="UTF-8"?>\n<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER><BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>${rep}</REPORTNAME><STATICVARIABLES><SVCURRENTCOMPANY>${esc(co)}</SVCURRENTCOMPANY></STATICVARIABLES></REQUESTDESC><REQUESTDATA>${body}</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>`;
 const led=(n,par,x='')=>`<TALLYMESSAGE xmlns:UDF="TallyUDF"><LEDGER NAME="${esc(n)}" ACTION="Create"><NAME>${esc(n)}</NAME><PARENT>${esc(par)}</PARENT>${x}</LEDGER></TALLYMESSAGE>`;
-function masters(){const{kind,V,pa}=R,p=P(),C=CF[kind],L=p[kind],used=new Set(),m=[],ex=new Set((p.tally||[]).map(n=>n.toUpperCase())),has=n=>ex.has(n.toUpperCase());
+function masters(V0){const{kind,pa}=R,V=V0||R.V,p=P(),C=CF[kind],L=p[kind],used=new Set(),m=[],ex=new Set((p.tally||[]).map(n=>n.toUpperCase())),has=n=>ex.has(n.toUpperCase());
  V.forEach(v=>v.ent.forEach(e=>used.add(e[0])));
  const sl=new Set(),tx=new Map();V.forEach(v=>v.ent.forEach(e=>{if(e[2]==='s')sl.add(e[0]);if(e[2]==='t')tx.set(e[0],e[3])}));
  sl.forEach(n=>{if(!has(n))m.push(led(n,kind==='sale'?p.groups.sales:p.groups.purchase))});
@@ -211,10 +220,23 @@ function vx(v){const a=v.deb?-v.tot:v.tot,bill=v.kind==='pur'&&v.rf?v.rf:v.no;
  return`<TALLYMESSAGE xmlns:UDF="TallyUDF"><VOUCHER VCHTYPE="${v.vt}" ACTION="Create" OBJVIEW="Invoice Voucher View"><DATE>${v.date}</DATE><VOUCHERTYPENAME>${v.vt}</VOUCHERTYPENAME><VOUCHERNUMBER>${esc(v.no)}</VOUCHERNUMBER><PARTYLEDGERNAME>${esc(v.nm)}</PARTYLEDGERNAME><PARTYNAME>${esc(v.nm)}</PARTYNAME>${v.g?`<PARTYGSTIN>${esc(v.g)}</PARTYGSTIN>`:''}<GSTREGISTRATIONTYPE>${v.rt}</GSTREGISTRATIONTYPE><PLACEOFSUPPLY>${esc(v.st)}</PLACEOFSUPPLY><STATENAME>${esc(v.st)}</STATENAME>${v.rf?`<REFERENCE>${esc(v.rf)}</REFERENCE>${v.rd?`<REFERENCEDATE>${v.rd}</REFERENCEDATE>`:''}`:''}<ISINVOICE>Yes</ISINVOICE><PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW><EFFECTIVEDATE>${v.date}</EFFECTIVEDATE>`
  +`<LEDGERENTRIES.LIST><LEDGERNAME>${esc(v.nm)}</LEDGERNAME><ISDEEMEDPOSITIVE>${v.deb?'Yes':'No'}</ISDEEMEDPOSITIVE><ISPARTYLEDGER>Yes</ISPARTYLEDGER><AMOUNT>${f2(a)}</AMOUNT><BILLALLOCATIONS.LIST><NAME>${esc(bill)}</NAME><BILLTYPE>New Ref</BILLTYPE><AMOUNT>${f2(a)}</AMOUNT></BILLALLOCATIONS.LIST></LEDGERENTRIES.LIST>`
  +v.ent.map(e=>`<LEDGERENTRIES.LIST><LEDGERNAME>${esc(e[0])}</LEDGERNAME><ISDEEMEDPOSITIVE>${v.deb?'No':'Yes'}</ISDEEMEDPOSITIVE><AMOUNT>${f2(v.deb?e[1]:-e[1])}</AMOUNT></LEDGERENTRIES.LIST>`).join('')+'</VOUCHER></TALLYMESSAGE>'}
-function drawDL(){const n=5000,pg=Math.ceil(R.V.length/n),d=$('#dl');d.innerHTML='<button id="dm" class="g">1. Masters file</button>';
- for(let i=0;i<pg;i++)d.insertAdjacentHTML('beforeend',`<button data-pg="${i}">${pg>1?`2. Vouchers part ${i+1} of ${pg}`:'2. Vouchers file'}</button>`);
- $('#dm').onclick=()=>dl(masters(),`1_${R.kind}_masters.xml`);d.querySelectorAll('[data-pg]').forEach(b=>b.onclick=()=>{const i=+b.dataset.pg;
-  dl(wrap(P().company,'Vouchers',R.V.slice(i*n,i*n+n).map(vx).join('')),`2_${R.kind}_vouchers_${String(i+1).padStart(2,'0')}.xml`)})}
-function dl(txt,name){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'application/xml'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+const ind=n=>(n/100).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+function drawDL(){const p=P(),lg=(p.log||[]).slice(-5).reverse();$('#dl').innerHTML='<button id="dz" type="button">Download everything (one zip)</button><button id="clh" type="button" class="g">Clear conversion history</button>';
+ $('#lg').innerHTML=lg.length?'<small>Recent conversions: '+lg.map(l=>`${l.d} ${l.kind==='sale'?'sale':'purchase'} ${l.n.toLocaleString('en-IN')} vouchers (${esc(l.file||'')})`).join('; ')+'</small>':'';
+ $('#dz').onclick=makeZip;$('#clh').onclick=()=>{if(confirm('Forget which vouchers were converted for this customer?')){p.hist={sale:{},pur:{}};p.log=[];save();drawDL()}}}
+async function makeZip(){const p=P(),V=getV(),n=5000,k=R.kind,pg=Math.ceil(V.length/n);
+ if(!V.length){alert('Nothing to download: all these vouchers were converted before.');return}
+ const z=new JSZip(),by={};V.forEach(v=>{const b=by[v.vt]||(by[v.vt]={n:0,t:0});b.n++;b.t+=v.tot});
+ setProg('Building masters…',0.02);await tick();z.file(`1_${k}_masters.xml`,masters(V));
+ for(let i=0;i<pg;i++){z.file(`2_${k}_vouchers_${String(i+1).padStart(2,'0')}.xml`,wrap(p.company,'Vouchers',V.slice(i*n,i*n+n).map(vx).join('')));setProg(`Building voucher file ${i+1} of ${pg}…`,0.05+0.6*(i+1)/pg);await tick()}
+ z.file('READ_ME_FIRST.txt',['PHARMASSIST to Tally import pack','Customer: '+cur+'   Company in Tally: '+p.company,'Date: '+new Date().toISOString().slice(0,10),'',
+  'BEFORE IMPORTING','1. Use the company named above, and make sure the voucher dates fall inside its financial year.','2. In Tally: Gateway, Alter, Voucher Types. For Sales, Credit Note, Purchase and Debit Note set Method of voucher numbering to Automatic (Manual Override), so PHARMASSIST invoice numbers are kept.','',
+  'IMPORT ORDER','1. Import 1_'+k+'_masters.xml','2. Import the 2_'+k+'_vouchers files in number order ('+pg+' file'+(pg>1?'s':'')+').','',
+  'TALLY SHOULD SHOW (Display More Reports, Statistics)'].concat(Object.entries(by).map(([a,b])=>`${a}: ${b.n} vouchers, total ${ind(b.t)}`)).join('\r\n'));
+ const blob=await z.generateAsync({type:'blob',compression:'DEFLATE'},m=>setProg('Zipping '+Math.round(m.percent)+'%',0.65+0.34*m.percent/100));
+ dl(blob,`tally_import_${k==='sale'?'sale':'purchase'}_${new Date().toISOString().slice(0,10)}.zip`);setProg('Done',1);
+ p.hist=p.hist||{sale:{},pur:{}};const h=p.hist[k]=p.hist[k]||{},g={};V.forEach(v=>{if(isNum(v.no))(g[v.vt]=g[v.vt]||[]).push(+v.no)});Object.keys(g).forEach(vt=>addH(h,vt,g[vt]));
+ p.log=(p.log||[]).concat({d:new Date().toISOString().slice(0,10),kind:k,file:R.file,n:V.length}).slice(-30);save();drawDL()}
+function dl(txt,name){const a=document.createElement('a');a.href=URL.createObjectURL(txt instanceof Blob?txt:new Blob([txt],{type:'application/xml'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
 boot();
 </script></body></html>
